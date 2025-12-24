@@ -1,0 +1,5 @@
+{
+  "/api/signed-url/route": "app/api/signed-url/route.js",
+  "/receipt/[sessionId]/page": "app/receipt/[sessionId]/page.js",
+  "/page": "app/page.js"
+}

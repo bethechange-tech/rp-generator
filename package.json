@@ -1,0 +1,28 @@
+{
+  "name": "ev-receipt-portal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "EV Charging Receipt Portal - Turborepo Monorepo",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "dev:portal": "turbo run dev --filter=@ev-receipt/portal",
+    "dev:core": "turbo run dev --filter=@ev-receipt/core",
+    "test": "turbo run test",
+    "test:watch": "turbo run test:watch",
+    "lint": "turbo run lint",
+    "generate": "turbo run generate --filter=@ev-receipt/core",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4"
+  },
+  "packageManager": "npm@10.2.4",
+  "engines": {
+    "node": ">=18"
+  }
+}

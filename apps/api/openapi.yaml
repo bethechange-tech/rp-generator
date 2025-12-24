@@ -1,0 +1,325 @@
+openapi: 3.0.3
+info:
+  title: EV Receipt API
+  description: API for generating and storing EV charging receipts
+  version: 1.0.0
+  contact:
+    email: support@voltcharge.co.uk
+
+servers:
+  - url: http://localhost:4000
+    description: Local development
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        "200":
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /receipts:
+    post:
+      summary: Generate a receipt PDF
+      operationId: createReceipt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReceiptRequest"
+      responses:
+        "201":
+          description: Receipt created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateReceiptResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /receipts/{sessionId}/url:
+    get:
+      summary: Get signed URL for a receipt PDF
+      operationId: getReceiptUrl
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Signed URL generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignedUrlResponse"
+        "404":
+          description: Receipt not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        timestamp:
+          type: string
+          format: date-time
+
+    CreateReceiptRequest:
+      type: object
+      required:
+        - session_id
+        - consumer_id
+        - receipt
+      properties:
+        session_id:
+          type: string
+          description: Unique charging session ID
+          example: "session-12345"
+        consumer_id:
+          type: string
+          description: Customer/consumer ID
+          example: "consumer-john-doe"
+        company_ref:
+          type: string
+          description: Reference to a pre-registered company (e.g., 'voltcharge', 'greencharge', 'rapidev'). When provided, company info is auto-populated.
+          example: "voltcharge"
+        receipt:
+          $ref: "#/components/schemas/ReceiptData"
+
+    ReceiptData:
+      type: object
+      description: Receipt data. If company_ref is provided in the request, company fields (company_name, company_tagline, etc.) are optional.
+      required:
+        - receipt_number
+        - receipt_date
+        - station_name
+        - station_address
+        - connector_type
+        - charger_power
+        - session_start_time
+        - session_end_time
+        - session_duration
+        - energy_delivered
+        - battery_start
+        - battery_end
+        - avg_charging_speed
+        - vehicle_make
+        - vehicle_model
+        - vehicle_vin
+        - energy_rate
+        - energy_cost
+        - session_fee
+        - idle_minutes
+        - idle_rate
+        - idle_fee
+        - subtotal
+        - vat_rate
+        - vat_amount
+        - total_amount
+        - card_brand
+        - card_last_four
+        - payment_status
+      properties:
+        company_name:
+          type: string
+          example: "VoltCharge UK"
+        company_tagline:
+          type: string
+          example: "Fast & Clean Energy"
+        company_logo_svg:
+          type: string
+          description: SVG markup or base64 data URI for company logo
+          example: "<svg>...</svg>"
+        company_website:
+          type: string
+          example: "www.voltcharge.co.uk"
+        support_email:
+          type: string
+          example: "support@voltcharge.co.uk"
+        support_phone:
+          type: string
+          example: "0800-VOLTCHG"
+        receipt_number:
+          type: string
+          example: "EVC-2025-41823"
+        receipt_date:
+          type: string
+          example: "24 December 2025"
+        station_name:
+          type: string
+          example: "London Plaza - Station #12"
+        station_address:
+          type: string
+          example: "456 Electric Avenue, London, EC1A 1BB"
+        connector_type:
+          type: string
+          example: "CCS Type 2"
+        charger_power:
+          type: string
+          example: "150 kW DC Fast Charger"
+        session_start_time:
+          type: string
+          example: "14:32"
+        session_end_time:
+          type: string
+          example: "15:17"
+        session_duration:
+          type: string
+          example: "45"
+        energy_delivered:
+          type: string
+          example: "42.8"
+        battery_start:
+          type: string
+          example: "22"
+        battery_end:
+          type: string
+          example: "87"
+        avg_charging_speed:
+          type: string
+          example: "118"
+        vehicle_make:
+          type: string
+          example: "Tesla"
+        vehicle_model:
+          type: string
+          example: "Model 3 Long Range"
+        vehicle_vin:
+          type: string
+          example: "•••••••••1234XYZ"
+        energy_rate:
+          type: string
+          example: "£0.28"
+        energy_cost:
+          type: string
+          example: "£11.98"
+        session_fee:
+          type: string
+          example: "£0.80"
+        idle_minutes:
+          type: string
+          example: "0"
+        idle_rate:
+          type: string
+          example: "£0.32"
+        idle_fee:
+          type: string
+          example: "£0.00"
+        subtotal:
+          type: string
+          example: "£12.78"
+        vat_rate:
+          type: string
+          example: "20%"
+        vat_amount:
+          type: string
+          example: "£2.56"
+        discount_label:
+          type: string
+          example: "Member Discount"
+        discount_percent:
+          type: string
+          example: "10%"
+        discount_amount:
+          type: string
+          example: "£1.28"
+        total_amount:
+          type: string
+          example: "£14.06"
+        card_brand:
+          type: string
+          example: "Visa"
+        card_last_four:
+          type: string
+          example: "4582"
+        payment_status:
+          type: string
+          example: "Paid"
+
+    CreateReceiptResponse:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          required:
+            - session_id
+            - pdf_key
+            - metadata_key
+            - index_key
+          properties:
+            session_id:
+              type: string
+            pdf_key:
+              type: string
+            metadata_key:
+              type: string
+            index_key:
+              type: string
+            signed_url:
+              type: string
+              description: Pre-signed URL to download the PDF (valid for 1 hour)
+
+    SignedUrlResponse:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          required:
+            - url
+            - expires_in
+          properties:
+            url:
+              type: string
+            expires_in:
+              type: integer
+              description: Seconds until URL expires
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error:
+          type: string
