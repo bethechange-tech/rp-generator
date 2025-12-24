@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { ReceiptPdfGenerator } from "@ev-receipt/core";
-import type { ReceiptData } from "@ev-receipt/core";
+import type { ReceiptData, ReceiptQuery } from "@ev-receipt/core";
 import { getStorage, getQueryService } from "../config";
 import { catchAsync, NotFoundError, AppError } from "../lib/errors";
 import { CompanyRegistry } from "../lib/companyRegistry";
@@ -14,6 +14,42 @@ interface CreateReceiptBody {
   company_ref?: string;
   receipt: Partial<ReceiptData> & Omit<ReceiptData, 'company_name' | 'company_tagline' | 'company_logo_svg' | 'company_website' | 'support_email' | 'support_phone'>;
 }
+
+// GET /receipts - Query receipts with pagination
+router.get(
+  "/",
+  catchAsync(async (req, res) => {
+    const query: ReceiptQuery = {
+      session_id: req.query.session_id as string | undefined,
+      consumer_id: req.query.consumer_id as string | undefined,
+      card_last_four: req.query.card_last_four as string | undefined,
+      receipt_number: req.query.receipt_number as string | undefined,
+      date_from: req.query.date_from as string | undefined,
+      date_to: req.query.date_to as string | undefined,
+      amount_min: req.query.amount_min ? parseFloat(req.query.amount_min as string) : undefined,
+      amount_max: req.query.amount_max ? parseFloat(req.query.amount_max as string) : undefined,
+      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+      cursor: req.query.cursor as string | undefined,
+    };
+
+    const queryService = getQueryService();
+    const result = await queryService.query(query);
+
+    res.json({
+      success: true,
+      data: {
+        records: result.records,
+        pagination: {
+          total_count: result.total_count,
+          page_size: result.page_size,
+          has_more: result.has_more,
+          next_cursor: result.next_cursor,
+        },
+        scanned_dates: result.scanned_dates,
+      },
+    });
+  })
+);
 
 // POST /receipts - Generate and store receipt
 router.post(

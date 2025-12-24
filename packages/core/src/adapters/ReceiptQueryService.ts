@@ -4,7 +4,71 @@ import {
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { chunk, orderBy, findIndex, last, compact, filter } from "lodash";
 import { S3Config, ReceiptMetadata } from "./S3ReceiptStorage";
+
+// ============================================
+// LRU CACHE IMPLEMENTATION
+// ============================================
+
+interface CacheEntry<T> {
+  value: T;
+  expiry: number;
+}
+
+/**
+ * Simple LRU Cache with TTL for query results
+ */
+class LRUCache<T> {
+  private cache: Map<string, CacheEntry<T>> = new Map();
+  private maxSize: number;
+  private ttlMs: number;
+
+  constructor(maxSize: number = 100, ttlSeconds: number = 300) {
+    this.maxSize = maxSize;
+    this.ttlMs = ttlSeconds * 1000;
+  }
+
+  get(key: string): T | undefined {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+    
+    if (Date.now() > entry.expiry) {
+      this.cache.delete(key);
+      return undefined;
+    }
+    
+    // Move to end (most recently used)
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    return entry.value;
+  }
+
+  set(key: string, value: T): void {
+    // Evict oldest if at capacity
+    if (this.cache.size >= this.maxSize) {
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey) this.cache.delete(oldestKey);
+    }
+    
+    this.cache.set(key, {
+      value,
+      expiry: Date.now() + this.ttlMs,
+    });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  get size(): number {
+    return this.cache.size;
+  }
+}
+
+// ============================================
+// QUERY INTERFACES
+// ============================================
 
 /**
  * Query parameters for searching receipts.
@@ -15,29 +79,12 @@ import { S3Config, ReceiptMetadata } from "./S3ReceiptStorage";
  * { session_id: "session-12345" }
  * 
  * @example
- * // Query by consumer with date range
- * { consumer_id: "consumer-john", date_from: "2025-12-01", date_to: "2025-12-31" }
+ * // Query by consumer with date range and pagination
+ * { consumer_id: "consumer-john", date_from: "2025-12-01", date_to: "2025-12-31", limit: 20 }
  * 
  * @example
- * // Query by card last four digits
- * { card_last_four: "4582", date_from: "2025-12-01" }
- * 
- * @example
- * // Query by amount range (in GBP)
- * { amount_min: 10, amount_max: 50, date_from: "2025-12-01" }
- * 
- * @example
- * // Query by receipt number
- * { receipt_number: "EVC-2025-41823" }
- * 
- * @example
- * // Complex query: consumer + card + date range
- * {
- *   consumer_id: "consumer-john",
- *   card_last_four: "4582",
- *   date_from: "2025-12-01",
- *   date_to: "2025-12-31"
- * }
+ * // Query with cursor for next page
+ * { consumer_id: "consumer-john", cursor: "2025-12-15:session-123", limit: 20 }
  */
 export interface ReceiptQuery {
   /** Filter by session ID (exact match) */
@@ -63,10 +110,16 @@ export interface ReceiptQuery {
   
   /** Filter by receipt number (exact match) */
   receipt_number?: string;
+
+  /** Maximum number of results to return (default: 50, max: 100) */
+  limit?: number;
+
+  /** Cursor for pagination (format: "date:session_id") */
+  cursor?: string;
 }
 
 /**
- * Query result containing matched records and metadata.
+ * Query result containing matched records and pagination metadata.
  */
 export interface QueryResult {
   /** Array of matching receipt metadata records */
@@ -74,6 +127,32 @@ export interface QueryResult {
   
   /** List of dates that were scanned (YYYY-MM-DD format) */
   scanned_dates: string[];
+
+  /** Total count of records found (before pagination) */
+  total_count: number;
+
+  /** Cursor for next page (undefined if no more results) */
+  next_cursor?: string;
+
+  /** Whether there are more results available */
+  has_more: boolean;
+
+  /** Number of results per page */
+  page_size: number;
+}
+
+/**
+ * Configuration options for the query service
+ */
+export interface QueryServiceConfig extends S3Config {
+  /** Enable result caching (default: true) */
+  enableCache?: boolean;
+  /** Cache size in number of queries (default: 100) */
+  cacheSize?: number;
+  /** Cache TTL in seconds (default: 300 = 5 minutes) */
+  cacheTtlSeconds?: number;
+  /** Maximum concurrent S3 requests (default: 5) */
+  maxConcurrency?: number;
 }
 
 /**
@@ -83,6 +162,9 @@ export interface QueryResult {
  * - Filter by session_id, consumer_id, card_last_four, receipt_number
  * - Date range queries (date_from, date_to)
  * - Amount range queries (amount_min, amount_max)
+ * - Pagination with cursor-based navigation
+ * - Parallel index file scanning for performance
+ * - LRU caching for frequently accessed queries
  * - Uses S3 Select for server-side filtering on AWS S3
  * - Falls back to client-side filtering for MinIO/local development
  * 
@@ -90,26 +172,42 @@ export interface QueryResult {
  * ```typescript
  * const queryService = ReceiptQueryService.createLocal();
  * 
- * // Find all receipts for a consumer in December
+ * // Find all receipts for a consumer in December with pagination
  * const results = await queryService.query({
  *   consumer_id: "consumer-12345",
  *   date_from: "2025-12-01",
  *   date_to: "2025-12-31",
+ *   limit: 20,
  * });
  * 
- * console.log(`Found ${results.records.length} receipts`);
- * console.log(`Scanned ${results.scanned_dates.length} days`);
+ * console.log(`Found ${results.total_count} receipts`);
+ * console.log(`Showing ${results.records.length} of ${results.page_size}`);
  * 
- * // Download a specific PDF
- * const pdfBuffer = await queryService.getPdf(results.records[0].pdf_key);
+ * // Get next page
+ * if (results.has_more) {
+ *   const nextPage = await queryService.query({
+ *     consumer_id: "consumer-12345",
+ *     cursor: results.next_cursor,
+ *     limit: 20,
+ *   });
+ * }
  * ```
  */
 export class ReceiptQueryService {
   private client: S3Client;
   private bucket: string;
+  private cache: LRUCache<ReceiptMetadata[]>;
+  private enableCache: boolean;
+  private maxConcurrency: number;
 
-  constructor(config: S3Config) {
+  constructor(config: QueryServiceConfig) {
     this.bucket = config.bucket;
+    this.enableCache = config.enableCache ?? true;
+    this.maxConcurrency = config.maxConcurrency ?? 5;
+    this.cache = new LRUCache(
+      config.cacheSize ?? 100,
+      config.cacheTtlSeconds ?? 300
+    );
     this.client = new S3Client({
       endpoint: config.endpoint,
       region: config.region,
@@ -123,25 +221,154 @@ export class ReceiptQueryService {
 
   /**
    * Query receipts using SQL-like filtering on NDJSON index files.
-   * Scans daily index files within the date range.
+   * Scans daily index files within the date range with parallel processing.
+   * Supports pagination via limit and cursor parameters.
    */
   async query(query: ReceiptQuery): Promise<QueryResult> {
     const dates = this.getDateRange(query.date_from, query.date_to);
-    const allRecords: ReceiptMetadata[] = [];
+    const limit = Math.min(query.limit ?? 50, 100); // Cap at 100
+    const cursor = this.parseCursor(query.cursor);
+    
+    // Parallel scan with concurrency control
+    const allRecords = await this.parallelScan(dates, query);
+    
+    // Sort by date descending, then by session_id using lodash orderBy
+    const sortedRecords = orderBy(allRecords, ["payment_date", "session_id"], ["desc", "desc"]);
 
-    for (const date of dates) {
-      const indexKey = `index/dt=${date}/index.ndjson`;
-      try {
-        const records = await this.queryIndexFile(indexKey, query);
+    // Apply cursor-based pagination using lodash findIndex
+    let startIndex = 0;
+    if (cursor) {
+      startIndex = findIndex(
+        sortedRecords,
+        (r) => r.payment_date === cursor.date && r.session_id === cursor.sessionId
+      );
+      if (startIndex === -1) startIndex = 0;
+      else startIndex += 1; // Start after the cursor
+    }
+
+    const totalCount = sortedRecords.length;
+    const paginatedRecords = sortedRecords.slice(startIndex, startIndex + limit);
+    const hasMore = startIndex + limit < totalCount;
+    
+    // Generate next cursor using lodash last
+    let nextCursor: string | undefined;
+    const lastRecord = last(paginatedRecords);
+    if (hasMore && lastRecord) {
+      nextCursor = `${lastRecord.payment_date}:${lastRecord.session_id}`;
+    }
+
+    return {
+      records: paginatedRecords,
+      scanned_dates: dates,
+      total_count: totalCount,
+      next_cursor: nextCursor,
+      has_more: hasMore,
+      page_size: limit,
+    };
+  }
+
+  /**
+   * Scan multiple index files in parallel with concurrency control
+   */
+  private async parallelScan(
+    dates: string[],
+    query: ReceiptQuery
+  ): Promise<ReceiptMetadata[]> {
+    const allRecords: ReceiptMetadata[] = [];
+    
+    // Process dates in chunks for controlled concurrency
+    const dateChunks = chunk(dates, this.maxConcurrency);
+    
+    for (const dateChunk of dateChunks) {
+      const chunkResults = await Promise.all(
+        dateChunk.map((date) => this.queryDateWithCache(date, query))
+      );
+      
+      for (const records of chunkResults) {
         allRecords.push(...records);
-      } catch (err: any) {
-        if (err.name !== "NoSuchKey") {
-          console.warn(`Failed to query ${indexKey}:`, err.message);
-        }
       }
     }
 
-    return { records: allRecords, scanned_dates: dates };
+    return allRecords;
+  }
+
+  /**
+   * Query a single date's index file with caching
+   */
+  private async queryDateWithCache(
+    date: string,
+    query: ReceiptQuery
+  ): Promise<ReceiptMetadata[]> {
+    const indexKey = `index/dt=${date}/index.ndjson`;
+    const cacheKey = this.buildCacheKey(date, query);
+
+    // Check cache first
+    if (this.enableCache) {
+      const cached = this.cache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    try {
+      const records = await this.queryIndexFile(indexKey, query);
+      
+      // Cache the results
+      if (this.enableCache) {
+        this.cache.set(cacheKey, records);
+      }
+      
+      return records;
+    } catch (err: any) {
+      if (err.name !== "NoSuchKey") {
+        console.warn(`Failed to query ${indexKey}:`, err.message);
+      }
+      return [];
+    }
+  }
+
+  /**
+   * Build a cache key from query parameters
+   */
+  private buildCacheKey(date: string, query: ReceiptQuery): string {
+    const parts = [
+      date,
+      query.session_id || "",
+      query.consumer_id || "",
+      query.card_last_four || "",
+      query.receipt_number || "",
+      query.amount_min?.toString() || "",
+      query.amount_max?.toString() || "",
+    ];
+    return parts.join("|");
+  }
+
+  /**
+   * Parse cursor string into date and session_id
+   */
+  private parseCursor(cursor?: string): { date: string; sessionId: string } | null {
+    if (!cursor) return null;
+    const [date, ...sessionParts] = cursor.split(":");
+    const sessionId = sessionParts.join(":"); // Handle session IDs with colons
+    if (!date || !sessionId) return null;
+    return { date, sessionId };
+  }
+
+  /**
+   * Clear the query cache
+   */
+  clearCache(): void {
+    this.cache.clear();
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats(): { size: number; enabled: boolean } {
+    return {
+      size: this.cache.size,
+      enabled: this.enableCache,
+    };
   }
 
   /**
@@ -207,11 +434,13 @@ export class ReceiptQueryService {
       new GetObjectCommand({ Bucket: this.bucket, Key: key })
     );
     const content = (await response.Body?.transformToString()) || "";
-    const lines = content.split("\n").filter(Boolean);
-
-    return lines
-      .map((line) => JSON.parse(line) as ReceiptMetadata)
-      .filter((record) => this.matchesQuery(record, query));
+    
+    // Use lodash compact to remove empty lines
+    const lines = compact(content.split("\n"));
+    const records = lines.map((line) => JSON.parse(line) as ReceiptMetadata);
+    
+    // Use lodash filter for filtering
+    return filter(records, (record) => this.matchesQuery(record, query));
   }
 
   private matchesQuery(record: ReceiptMetadata, query: ReceiptQuery): boolean {
@@ -309,13 +538,14 @@ export class ReceiptQueryService {
   }
 
   // Factory for local MinIO
-  static createLocal(): ReceiptQueryService {
+  static createLocal(options?: Partial<QueryServiceConfig>): ReceiptQueryService {
     return new ReceiptQueryService({
       endpoint: "http://localhost:9000",
       region: "us-east-1",
       accessKeyId: "minioadmin",
       secretAccessKey: "minioadmin",
       bucket: "receipts",
+      ...options,
     });
   }
 }

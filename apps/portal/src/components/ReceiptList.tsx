@@ -1,20 +1,24 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import type { ReceiptMetadata } from "@ev-receipt/core";
 import { useReceipts } from "@/lib/hooks";
-import { Card, LoadingState, ErrorState, EmptyState, DocumentIcon, ChevronRightIcon } from "./ui";
+import { Card, LoadingState, ErrorState, EmptyState, DocumentIcon, ChevronRightIcon, Spinner } from "./ui";
+import { useState, useCallback } from "react";
 
 export function ReceiptList() {
   const searchParams = useSearchParams();
-  const { data, loading } = useReceipts(searchParams.toString());
+  const router = useRouter();
+  const { data, loading, loadMore, loadingMore } = useReceipts(searchParams.toString());
 
   if (loading) return <LoadingState message="Loading receipts..." />;
   if (!data?.success) return <ErrorState title="Error loading receipts" message={data?.error || "Unknown error"} />;
-  if (data.data?.count === 0) {
-    return <EmptyState title="No receipts found" message={`Scanned ${data.data.scanned_dates.length} days with no matching results`} />;
+  if (data.data?.records.length === 0) {
+    return <EmptyState title="No receipts found" message={`Scanned ${data.data.pagination.total_count === 0 ? data.data.scanned_dates.length : 0} days with no matching results`} />;
   }
+
+  const { records, pagination, scanned_dates } = data.data!;
 
   return (
     <Card className="overflow-hidden">
@@ -24,15 +28,40 @@ export function ReceiptList() {
           Receipts
         </h2>
         <span className="text-xs sm:text-sm text-gray-500">
-          {data.data?.count} found • {data.data?.scanned_dates.length} days scanned
+          Showing {records.length} of {pagination.total_count} • {scanned_dates.length} days scanned
         </span>
       </div>
 
       <div className="divide-y divide-gray-100">
-        {data.data?.records.map((receipt) => (
+        {records.map((receipt) => (
           <ReceiptRow key={receipt.session_id} receipt={receipt} />
         ))}
       </div>
+
+      {/* Pagination Footer */}
+      {pagination.has_more && (
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-100 bg-gray-50">
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="w-full sm:w-auto px-6 py-2.5 sm:py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 active:bg-primary-700 transition font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loadingMore ? (
+              <>
+                <Spinner className="h-4 w-4" />
+                Loading...
+              </>
+            ) : (
+              <>
+                Load More
+                <span className="text-primary-200 text-sm">
+                  ({pagination.total_count - records.length} remaining)
+                </span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </Card>
   );
 }

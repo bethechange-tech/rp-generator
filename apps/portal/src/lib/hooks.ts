@@ -3,12 +3,14 @@ import api from "./api";
 import type { ApiResponse, QueryData, SignedUrlData } from "./types";
 
 /**
- * Hook for fetching receipts based on search params
+ * Hook for fetching receipts with pagination support
  */
 export function useReceipts(searchParams: string) {
   const [data, setData] = useState<ApiResponse<QueryData> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
+  // Fetch initial data
   useEffect(() => {
     let cancelled = false;
 
@@ -33,7 +35,38 @@ export function useReceipts(searchParams: string) {
     return () => { cancelled = true; };
   }, [searchParams]);
 
-  return { data, loading };
+  // Load more function for pagination
+  const loadMore = useCallback(async () => {
+    if (!data?.data?.pagination.next_cursor || loadingMore) return;
+
+    setLoadingMore(true);
+    try {
+      const cursor = encodeURIComponent(data.data.pagination.next_cursor);
+      const separator = searchParams ? "&" : "";
+      const response = await api.get<ApiResponse<QueryData>>(
+        `/receipts?${searchParams}${separator}cursor=${cursor}`
+      );
+
+      if (response.data.success && response.data.data) {
+        setData((prev) => {
+          if (!prev?.data) return response.data;
+          return {
+            ...response.data,
+            data: {
+              ...response.data.data!,
+              records: [...prev.data.records, ...response.data.data!.records],
+            },
+          };
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load more:", error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [data?.data?.pagination.next_cursor, searchParams, loadingMore]);
+
+  return { data, loading, loadMore, loadingMore };
 }
 
 /**

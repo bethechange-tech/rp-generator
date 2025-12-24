@@ -28,7 +28,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Query receipts with pagination */
+        get: operations["queryReceipts"];
         put?: never;
         /** Generate a receipt PDF */
         post: operations["createReceipt"];
@@ -176,6 +177,37 @@ export interface components {
                 signed_url?: string;
             };
         };
+        QueryReceiptsResponse: {
+            success: boolean;
+            data: {
+                records: components["schemas"]["ReceiptMetadata"][];
+                pagination: {
+                    /** @description Total number of matching records */
+                    total_count: number;
+                    /** @description Number of records per page */
+                    page_size: number;
+                    /** @description Whether more results are available */
+                    has_more: boolean;
+                    /** @description Cursor for fetching next page */
+                    next_cursor?: string;
+                };
+                /** @description List of dates that were scanned (YYYY-MM-DD) */
+                scanned_dates: string[];
+            };
+        };
+        ReceiptMetadata: {
+            session_id: string;
+            consumer_id: string;
+            receipt_number: string;
+            /** Format: date */
+            payment_date: string;
+            card_last_four: string;
+            amount: string;
+            pdf_key: string;
+            metadata_key: string;
+            /** Format: date-time */
+            created_at: string;
+        };
         SignedUrlResponse: {
             success: boolean;
             data: {
@@ -214,6 +246,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    queryReceipts: {
+        parameters: {
+            query?: {
+                /** @description Filter by session ID (exact match) */
+                session_id?: string;
+                /** @description Filter by consumer ID (exact match) */
+                consumer_id?: string;
+                /** @description Filter by last 4 digits of payment card */
+                card_last_four?: string;
+                /** @description Filter by receipt number (exact match) */
+                receipt_number?: string;
+                /** @description Start date for query range (YYYY-MM-DD) */
+                date_from?: string;
+                /** @description End date for query range (YYYY-MM-DD) */
+                date_to?: string;
+                /** @description Minimum amount filter */
+                amount_min?: number;
+                /** @description Maximum amount filter */
+                amount_max?: number;
+                /** @description Maximum number of results to return (default 50, max 100) */
+                limit?: number;
+                /** @description Cursor for pagination (from previous response) */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Query results with pagination */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueryReceiptsResponse"];
+                };
+            };
+            /** @description Invalid query parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
