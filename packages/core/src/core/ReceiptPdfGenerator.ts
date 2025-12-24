@@ -1,4 +1,5 @@
 import * as path from "path";
+import { forEach, defaults } from "lodash";
 import { ReceiptData } from "../domain/ReceiptData";
 import { TemplateProvider, PdfRenderer } from "../ports";
 import { FileTemplateProvider, PuppeteerPdfRenderer } from "../adapters";
@@ -54,21 +55,20 @@ export class ReceiptPdfGenerator {
       result = result.replace(/<div class="cost-row discount">[\s\S]*?<\/div>/, "");
     }
 
-    // Set defaults for optional fields
-    const dataWithDefaults = {
-      ...data,
-      qr_code_svg: data.qr_code_svg || ReceiptPdfGenerator.DEFAULT_QR_CODE,
-      company_logo_svg: data.company_logo_svg || ReceiptPdfGenerator.DEFAULT_LOGO,
-      discount_label: data.discount_label || "",
-      discount_percent: data.discount_percent || "",
-      discount_amount: data.discount_amount || "",
-    };
+    // Set defaults for optional fields using lodash defaults
+    const dataWithDefaults = defaults({}, data, {
+      qr_code_svg: ReceiptPdfGenerator.DEFAULT_QR_CODE,
+      company_logo_svg: ReceiptPdfGenerator.DEFAULT_LOGO,
+      discount_label: "",
+      discount_percent: "",
+      discount_amount: "",
+    });
 
-    // Replace all {{placeholder}} with actual values
-    for (const [key, value] of Object.entries(dataWithDefaults)) {
+    // Replace all {{placeholder}} with actual values using lodash forEach
+    forEach(dataWithDefaults, (value, key) => {
       const placeholder = new RegExp(`{{${key}}}`, "g");
       result = result.replace(placeholder, value);
-    }
+    });
 
     return result;
   }

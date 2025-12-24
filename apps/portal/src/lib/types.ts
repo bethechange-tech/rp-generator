@@ -7,10 +7,17 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
+export interface PaginationInfo {
+  total_count: number;
+  page_size: number;
+  has_more: boolean;
+  next_cursor?: string;
+}
+
 export interface QueryData {
   records: ReceiptMetadata[];
   scanned_dates: string[];
-  count: number;
+  pagination: PaginationInfo;
 }
 
 export interface SignedUrlData {

@@ -20,11 +20,13 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.958.0",
     "@aws-sdk/s3-request-presigner": "^3.958.0",
+    "lodash": "^4.17.21",
     "puppeteer": "^24.0.0"
   },
   "devDependencies": {
     "@ev-receipt/typescript-config": "*",
     "@testcontainers/minio": "^11.10.0",
+    "@types/lodash": "^4.17.21",
     "@types/node": "^20.10.5",
     "testcontainers": "^11.10.0",
     "ts-node": "^10.9.2",

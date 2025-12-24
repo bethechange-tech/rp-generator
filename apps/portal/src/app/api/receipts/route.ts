@@ -33,6 +33,13 @@ export async function GET(request: NextRequest) {
     const amountMax = searchParams.get("amount_max");
     if (amountMax) query.amount_max = parseFloat(amountMax);
 
+    // Pagination params
+    const limit = searchParams.get("limit");
+    if (limit) query.limit = parseInt(limit, 10);
+
+    const cursor = searchParams.get("cursor");
+    if (cursor) query.cursor = cursor;
+
     // Default to last 7 days if no date range provided
     if (!dateFrom && !dateTo) {
       const today = new Date();
@@ -50,7 +57,12 @@ export async function GET(request: NextRequest) {
       data: {
         records: result.records,
         scanned_dates: result.scanned_dates,
-        count: result.records.length,
+        pagination: {
+          total_count: result.total_count,
+          page_size: result.page_size,
+          has_more: result.has_more,
+          next_cursor: result.next_cursor,
+        },
       },
     });
   } catch (error) {
