@@ -1,7 +1,0 @@
-{
-  "/api/receipts/route": "/api/receipts",
-  "/api/signed-url/route": "/api/signed-url",
-  "/_not-found/page": "/_not-found",
-  "/page": "/",
-  "/receipt/[sessionId]/page": "/receipt/[sessionId]"
-}

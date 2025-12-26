@@ -4,6 +4,16 @@
   "description": "EV Charging Receipt PDF Generator Core SDK",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./constants": {
+      "types": "./dist/constants.d.ts",
+      "default": "./dist/constants.js"
+    }
+  },
   "files": [
     "dist",
     "template"
@@ -21,13 +31,15 @@
     "@aws-sdk/client-s3": "^3.958.0",
     "@aws-sdk/s3-request-presigner": "^3.958.0",
     "lodash": "^4.17.21",
-    "puppeteer": "^24.0.0"
+    "puppeteer": "^24.0.0",
+    "sql-bricks": "^3.0.1"
   },
   "devDependencies": {
     "@ev-receipt/typescript-config": "*",
     "@testcontainers/minio": "^11.10.0",
     "@types/lodash": "^4.17.21",
     "@types/node": "^20.10.5",
+    "@types/sql-bricks": "^2.0.5",
     "testcontainers": "^11.10.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3",

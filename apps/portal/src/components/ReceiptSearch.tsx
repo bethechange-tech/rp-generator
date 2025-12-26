@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 import { SearchIcon, Card } from "./ui";
 
 interface FormField {
@@ -22,28 +22,17 @@ const FIELDS: FormField[] = [
 
 type FieldKey = FormField["key"];
 
-function getDefaultDates() {
-  const today = new Date();
-  const weekAgo = new Date(today);
-  weekAgo.setDate(weekAgo.getDate() - 7);
-  return {
-    date_from: weekAgo.toISOString().split("T")[0],
-    date_to: today.toISOString().split("T")[0],
-  };
-}
-
 export function ReceiptSearch() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const defaults = useMemo(() => getDefaultDates(), []);
 
   // Single state object for all form fields
   const [form, setForm] = useState<Record<FieldKey, string>>(() => ({
     consumer_id: searchParams.get("consumer_id") || "",
     card_last_four: searchParams.get("card_last_four") || "",
     receipt_number: searchParams.get("receipt_number") || "",
-    date_from: searchParams.get("date_from") || defaults.date_from,
-    date_to: searchParams.get("date_to") || defaults.date_to,
+    date_from: searchParams.get("date_from") || "",
+    date_to: searchParams.get("date_to") || "",
   }));
 
   const updateField = useCallback((key: FieldKey, value: string) => {
@@ -63,10 +52,11 @@ export function ReceiptSearch() {
       consumer_id: "",
       card_last_four: "",
       receipt_number: "",
-      ...defaults,
+      date_from: "",
+      date_to: "",
     });
     router.push("/");
-  }, [defaults, router]);
+  }, [router]);
 
   return (
     <Card className="p-4 sm:p-6">

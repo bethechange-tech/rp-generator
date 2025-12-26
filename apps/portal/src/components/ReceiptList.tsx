@@ -1,16 +1,30 @@
 "use client";
 
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { ReceiptMetadata } from "@ev-receipt/core";
 import { useReceipts } from "@/lib/hooks";
-import { Card, LoadingState, ErrorState, EmptyState, DocumentIcon, ChevronRightIcon, Spinner } from "./ui";
-import { useState, useCallback } from "react";
+import { Card, LoadingState, ErrorState, EmptyState, DocumentIcon, ChevronRightIcon, Spinner, SearchIcon } from "./ui";
 
 export function ReceiptList() {
   const searchParams = useSearchParams();
-  const router = useRouter();
-  const { data, loading, loadMore, loadingMore } = useReceipts(searchParams.toString());
+  const { data, loading, loadMore, loadingMore, hasSearchCriteria } = useReceipts(searchParams.toString());
+
+  if (!hasSearchCriteria) {
+    return (
+      <Card className="p-8 text-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="bg-gray-100 p-4 rounded-full">
+            <SearchIcon className="w-8 h-8 text-gray-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Enter search criteria</h3>
+            <p className="text-sm text-gray-500 mt-1">Use the search form above to find receipts</p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   if (loading) return <LoadingState message="Loading receipts..." />;
   if (!data?.success) return <ErrorState title="Error loading receipts" message={data?.error || "Unknown error"} />;

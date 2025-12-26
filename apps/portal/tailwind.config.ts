@@ -9,14 +9,13 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Zest-inspired color palette
         primary: {
           50: "#f0fdfa",
           100: "#ccfbf1",
           200: "#99f6e4",
           300: "#5eead4",
           400: "#2dd4bf",
-          500: "#00d4aa",  // Zest teal accent
+          500: "#00d4aa",  
           600: "#0d9488",
           700: "#0f766e",
           800: "#115e59",
@@ -32,8 +31,8 @@ const config: Config = {
           600: "#486581",
           700: "#334e68",
           800: "#1a3a52",
-          900: "#0f2847",  // Zest dark navy
-          950: "#0a1628",  // Zest darkest navy
+          900: "#0f2847",  
+          950: "#0a1628",  
         },
       },
     },

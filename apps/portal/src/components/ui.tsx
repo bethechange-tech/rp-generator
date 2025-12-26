@@ -1,9 +1,5 @@
 import { ReactNode } from "react";
 
-// ============================================
-// ICONS
-// ============================================
-
 export function SearchIcon({ className = "w-5 h-5" }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -52,10 +48,6 @@ export function WarningIcon({ className = "w-6 h-6" }: { className?: string }) {
   );
 }
 
-// ============================================
-// SPINNER
-// ============================================
-
 export function Spinner({ className = "h-5 w-5" }: { className?: string }) {
   return (
     <svg className={`animate-spin ${className}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -64,10 +56,6 @@ export function Spinner({ className = "h-5 w-5" }: { className?: string }) {
     </svg>
   );
 }
-
-// ============================================
-// STATE COMPONENTS
-// ============================================
 
 interface CardProps {
   children: ReactNode;

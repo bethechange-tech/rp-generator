@@ -1,6 +1,6 @@
 import { ReceiptPdfGenerator } from "@ev-receipt/core";
 import type { ReceiptData } from "@ev-receipt/core";
-import { getStorage, getQueryService } from "./config";
+import { StorageFactory, QueryServiceFactory } from "./config";
 import { CompanyRegistry } from "./lib/companyRegistry";
 
 // Sample receipt data for seeding
@@ -127,8 +127,8 @@ async function seed() {
   console.log("🌱 Seeding S3 with sample receipts...\n");
 
   const generator = ReceiptPdfGenerator.create();
-  const storage = getStorage();
-  const queryService = getQueryService();
+  const storage = StorageFactory.get();
+  const queryService = QueryServiceFactory.get();
 
   for (const { session_id, consumer_id, company_ref, receipt } of sampleReceipts) {
     try {

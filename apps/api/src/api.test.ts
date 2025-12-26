@@ -6,7 +6,7 @@ import express from "express";
 import cors from "cors";
 import { Router } from "express";
 import { ReceiptPdfGenerator, S3ReceiptStorage, ReceiptQueryService } from "@ev-receipt/core";
-import type { ReceiptData, S3Config } from "@ev-receipt/core";
+import type { ReceiptData, ReceiptQuery, S3Config } from "@ev-receipt/core";
 
 // Create test app factory
 function createTestApp(storage: S3ReceiptStorage, queryService: ReceiptQueryService) {
@@ -25,6 +25,45 @@ function createTestApp(storage: S3ReceiptStorage, queryService: ReceiptQueryServ
   // Receipts routes
   const router = Router();
   const generator = ReceiptPdfGenerator.create();
+
+  // GET /receipts - Query receipts with pagination
+  router.get("/", async (req, res) => {
+    try {
+      const query: ReceiptQuery = {
+        session_id: req.query.session_id as string | undefined,
+        consumer_id: req.query.consumer_id as string | undefined,
+        card_last_four: req.query.card_last_four as string | undefined,
+        receipt_number: req.query.receipt_number as string | undefined,
+        date_from: req.query.date_from as string | undefined,
+        date_to: req.query.date_to as string | undefined,
+        amount_min: req.query.amount_min ? parseFloat(req.query.amount_min as string) : undefined,
+        amount_max: req.query.amount_max ? parseFloat(req.query.amount_max as string) : undefined,
+        limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+        cursor: req.query.cursor as string | undefined,
+      };
+
+      const result = await queryService.query(query);
+
+      res.json({
+        success: true,
+        data: {
+          records: result.records,
+          pagination: {
+            total_count: result.total_count,
+            page_size: result.page_size,
+            has_more: result.has_more,
+            next_cursor: result.next_cursor,
+          },
+          scanned_dates: result.scanned_dates,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to query receipts",
+      });
+    }
+  });
 
   router.post("/", async (req, res) => {
     try {
@@ -327,6 +366,133 @@ describe("EV Receipt API", () => {
 
         expect(uniqueKeys.size).toBe(sessions.length);
         expect(results.every((r) => r.success)).toBe(true);
+      });
+    });
+  });
+
+  describe("Given receipts exist for querying", () => {
+    const queryConsumerId = "consumer-query-test";
+    const querySessionIds = ["query-session-1", "query-session-2", "query-session-3"];
+
+    beforeAll(async () => {
+      // Create receipts for query testing
+      for (const sessionId of querySessionIds) {
+        await request(app)
+          .post("/receipts")
+          .send({
+            session_id: sessionId,
+            consumer_id: queryConsumerId,
+            receipt: {
+              ...sampleReceipt,
+              receipt_number: `EVC-${sessionId}`,
+              card_last_four: "1234",
+            },
+          });
+      }
+    });
+
+    describe("When a client queries receipts via GET /receipts", () => {
+      it("Then it should return all receipts with pagination info", async () => {
+        const response = await request(app).get("/receipts");
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.records).toBeDefined();
+        expect(Array.isArray(response.body.data.records)).toBe(true);
+        expect(response.body.data.pagination).toBeDefined();
+        expect(response.body.data.pagination.total_count).toBeGreaterThan(0);
+        expect(response.body.data.pagination.page_size).toBeDefined();
+        expect(response.body.data.pagination.has_more).toBeDefined();
+        expect(response.body.data.scanned_dates).toBeDefined();
+      });
+    });
+
+    describe("When a client queries receipts by consumer_id", () => {
+      it("Then it should return only receipts for that consumer", async () => {
+        const response = await request(app)
+          .get("/receipts")
+          .query({ consumer_id: queryConsumerId });
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.records.length).toBeGreaterThanOrEqual(querySessionIds.length);
+        expect(
+          response.body.data.records.every(
+            (r: { consumer_id: string }) => r.consumer_id === queryConsumerId
+          )
+        ).toBe(true);
+      });
+    });
+
+    describe("When a client queries receipts by card_last_four", () => {
+      it("Then it should return only receipts with that card", async () => {
+        const response = await request(app)
+          .get("/receipts")
+          .query({ card_last_four: "1234" });
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.records.length).toBeGreaterThanOrEqual(querySessionIds.length);
+        expect(
+          response.body.data.records.every(
+            (r: { card_last_four: string }) => r.card_last_four === "1234"
+          )
+        ).toBe(true);
+      });
+    });
+
+    describe("When a client queries receipts with a limit", () => {
+      it("Then it should return at most that many records", async () => {
+        const limit = 2;
+        const response = await request(app)
+          .get("/receipts")
+          .query({ limit });
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.records.length).toBeLessThanOrEqual(limit);
+        expect(response.body.data.pagination.page_size).toBe(limit);
+      });
+    });
+
+    describe("When a client queries receipts by session_id", () => {
+      it("Then it should return only that specific receipt", async () => {
+        const targetSession = querySessionIds[0];
+        const response = await request(app)
+          .get("/receipts")
+          .query({ session_id: targetSession });
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.records.length).toBe(1);
+        expect(response.body.data.records[0].session_id).toBe(targetSession);
+      });
+    });
+
+    describe("When a client queries with pagination cursor", () => {
+      it("Then it should return the next page of results", async () => {
+        // First request with limit
+        const firstPage = await request(app)
+          .get("/receipts")
+          .query({ limit: 2 });
+
+        expect(firstPage.status).toBe(200);
+
+        if (firstPage.body.data.pagination.has_more) {
+          const cursor = firstPage.body.data.pagination.next_cursor;
+
+          const secondPage = await request(app)
+            .get("/receipts")
+            .query({ limit: 2, cursor });
+
+          expect(secondPage.status).toBe(200);
+          expect(secondPage.body.success).toBe(true);
+          // Second page should have different records
+          const firstPageIds = firstPage.body.data.records.map((r: { session_id: string }) => r.session_id);
+          const secondPageIds = secondPage.body.data.records.map((r: { session_id: string }) => r.session_id);
+          const overlap = firstPageIds.filter((id: string) => secondPageIds.includes(id));
+          expect(overlap.length).toBe(0);
+        }
       });
     });
   });
