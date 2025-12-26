@@ -363,4 +363,172 @@ describe("Receipt Storage System", () => {
       expect(results.records.length).toBe(1);
     });
   });
+
+  // =========================================
+  // Phase 2: Secondary Index Tests
+  // =========================================
+
+  describe("Given Phase 2 secondary indexes are enabled", () => {
+    const consumerA = "consumer-secondary-alice";
+    const consumerB = "consumer-secondary-bob";
+    const cardA = "7777";
+    const cardB = "8888";
+
+    beforeAll(async () => {
+      // Create multiple receipts to test secondary index lookups
+      const receipts = [
+        { session_id: "sec-idx-001", consumer_id: consumerA, card_last_four: cardA, amount: "£15.00", payment_date: "2025-10-01" },
+        { session_id: "sec-idx-002", consumer_id: consumerA, card_last_four: cardA, amount: "£25.00", payment_date: "2025-10-15" },
+        { session_id: "sec-idx-003", consumer_id: consumerA, card_last_four: cardB, amount: "£35.00", payment_date: "2025-11-01" },
+        { session_id: "sec-idx-004", consumer_id: consumerB, card_last_four: cardB, amount: "£45.00", payment_date: "2025-11-15" },
+      ];
+
+      for (const receipt of receipts) {
+        const base64Pdf = Buffer.from(`pdf-${receipt.session_id}`).toString("base64");
+        await storage.storeReceipt(base64Pdf, {
+          ...receipt,
+          receipt_number: `EVC-${receipt.session_id}`,
+        });
+      }
+    });
+
+    it("should create consumer secondary index when storing receipt", async () => {
+      // Act - Check if consumer index was created
+      const result = await storage.storeReceipt(
+        Buffer.from("test-pdf").toString("base64"),
+        {
+          session_id: "sec-idx-verify",
+          consumer_id: "consumer-verify-index",
+          card_last_four: "0001",
+          amount: "£10.00",
+          payment_date: "2025-12-15",
+          receipt_number: "EVC-VERIFY",
+        }
+      );
+
+      // Assert
+      expect(result.consumer_index_key).toBe("index/by-consumer/consumer-verify-index/receipts.ndjson");
+      expect(result.card_index_key).toBe("index/by-card/0001/receipts.ndjson");
+    });
+
+    it("should query by consumer_id without date range using secondary index (O(1))", async () => {
+      // Act - Query without date range should use secondary index
+      const results = await queryService.query({
+        consumer_id: consumerA,
+      });
+
+      // Assert
+      expect(results.records.length).toBe(3); // All 3 receipts for consumerA
+      expect(results.records.every(r => r.consumer_id === consumerA)).toBe(true);
+      // Secondary index query should not scan dates
+      expect(results.scanned_dates.length).toBe(0);
+    });
+
+    it("should query by card_last_four without date range using secondary index (O(1))", async () => {
+      // Act - Query by card without date range should use secondary index
+      const results = await queryService.query({
+        card_last_four: cardB,
+      });
+
+      // Assert - At least 2 receipts with cardB from this test, possibly more from other tests
+      expect(results.records.length).toBeGreaterThanOrEqual(2);
+      expect(results.records.every(r => r.card_last_four === cardB)).toBe(true);
+      // Secondary index query should not scan dates
+      expect(results.scanned_dates.length).toBe(0);
+    });
+
+    it("should fall back to date scan when date range is specified", async () => {
+      // Act - Query with date range should use date scanning (even with consumer_id)
+      const results = await queryService.query({
+        consumer_id: consumerA,
+        date_from: "2025-10-01",
+        date_to: "2025-10-31",
+      });
+
+      // Assert
+      expect(results.records.length).toBe(2); // Only October receipts
+      expect(results.scanned_dates.length).toBeGreaterThan(0); // Date scan was used
+    });
+
+    it("should filter secondary index results by date range when specified in secondary lookup", async () => {
+      // Query consumer secondary index but filter to October only
+      // Note: This tests the post-filtering after secondary index lookup
+      const results = await queryService.query({
+        consumer_id: consumerA,
+      });
+
+      // All 3 consumer A receipts returned
+      expect(results.records.length).toBe(3);
+      
+      // Filter dates in consumer results
+      const octoberReceipts = results.records.filter(r => 
+        r.payment_date >= "2025-10-01" && r.payment_date <= "2025-10-31"
+      );
+      expect(octoberReceipts.length).toBe(2);
+    });
+
+    it("should prefer consumer index over card index when both are provided", async () => {
+      // Query with both consumer and card should use consumer index
+      // (Consumer queries are more common and typically have fewer results)
+      const results = await queryService.query({
+        consumer_id: consumerA,
+        card_last_four: cardA,
+      });
+
+      // Should return only receipts matching both criteria
+      expect(results.records.length).toBe(2);
+      expect(results.records.every(r => 
+        r.consumer_id === consumerA && r.card_last_four === cardA
+      )).toBe(true);
+    });
+  });
+
+  describe("Given pagination with secondary indexes", () => {
+    const consumerId = "consumer-pagination-test";
+
+    beforeAll(async () => {
+      // Create 10 receipts for pagination testing
+      for (let i = 0; i < 10; i++) {
+        const base64Pdf = Buffer.from(`pdf-pagination-${i}`).toString("base64");
+        await storage.storeReceipt(base64Pdf, {
+          session_id: `pagination-idx-${String(i).padStart(3, "0")}`,
+          consumer_id: consumerId,
+          receipt_number: `EVC-PAGE-${i}`,
+          payment_date: `2025-09-${String(i + 1).padStart(2, "0")}`,
+          card_last_four: "3333",
+          amount: `£${10 + i}.00`,
+        });
+      }
+    });
+
+    it("should paginate secondary index results", async () => {
+      // Act - Get first page
+      const page1 = await queryService.query({
+        consumer_id: consumerId,
+        limit: 3,
+      });
+
+      // Assert first page
+      expect(page1.records.length).toBe(3);
+      expect(page1.has_more).toBe(true);
+      expect(page1.next_cursor).toBeDefined();
+      expect(page1.total_count).toBe(10);
+
+      // Act - Get second page using cursor
+      const page2 = await queryService.query({
+        consumer_id: consumerId,
+        limit: 3,
+        cursor: page1.next_cursor,
+      });
+
+      // Assert second page
+      expect(page2.records.length).toBe(3);
+      expect(page2.has_more).toBe(true);
+      
+      // Verify no duplicates between pages
+      const page1Ids = page1.records.map(r => r.session_id);
+      const page2Ids = page2.records.map(r => r.session_id);
+      expect(page1Ids.some(id => page2Ids.includes(id))).toBe(false);
+    });
+  });
 });

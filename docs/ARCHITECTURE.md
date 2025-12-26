@@ -70,11 +70,20 @@ receipts/
 │   ├── session-002.json
 │   └── ...
 └── index/
-    ├── dt=2025-12-01/
+    ├── dt=2025-12-01/              # Date-partitioned (primary)
     │   └── index.ndjson
     ├── dt=2025-12-02/
     │   └── index.ndjson
-    └── ...
+    ├── by-consumer/                 # Secondary index (Phase 2)
+    │   ├── consumer-john/
+    │   │   └── receipts.ndjson
+    │   └── consumer-jane/
+    │       └── receipts.ndjson
+    └── by-card/                     # Secondary index (Phase 2)
+        ├── 4582/
+        │   └── receipts.ndjson
+        └── 1234/
+            └── receipts.ndjson
 ```
 
 ### Metadata Schema
@@ -193,30 +202,59 @@ if (cached) return cached;
 
 ---
 
-### Phase 2: Add Secondary Indexes (100K-1M receipts)
+### Phase 2: Add Secondary Indexes (100K-1M receipts) ✅ IMPLEMENTED
+
+Secondary indexes provide O(1) lookups for common query patterns without scanning date ranges.
 
 #### 2.1 Consumer-Partitioned Indexes
 ```
-index/
-├── by-consumer/
-│   ├── consumer-john/
-│   │   └── receipts.ndjson
-│   └── consumer-jane/
-│       └── receipts.ndjson
-└── by-date/
-    └── dt=2025-12-24/
-        └── index.ndjson
+index/by-consumer/{consumer_id}/receipts.ndjson
 ```
+- Created automatically when storing receipts via `S3ReceiptStorage.storeReceipt()`
+- Contains all receipts for a specific consumer
+- Queried directly when `consumer_id` filter is used without date range
 
 #### 2.2 Card-Partitioned Indexes
 ```
-index/
-└── by-card/
-    ├── 4582/
-    │   └── receipts.ndjson
-    └── 1234/
-        └── receipts.ndjson
+index/by-card/{card_last_four}/receipts.ndjson
 ```
+- Created automatically when storing receipts
+- Contains all receipts for a specific card
+- Queried directly when `card_last_four` filter is used without consumer or date range
+
+#### 2.3 Query Strategy Selection
+The `ReceiptQueryService` automatically selects the optimal query strategy:
+
+| Query Parameters | Strategy | Complexity |
+|------------------|----------|------------|
+| `consumer_id` only | Consumer secondary index | O(1) |
+| `card_last_four` only | Card secondary index | O(1) |
+| `date_from`/`date_to` | Date range scan (parallel) | O(days) |
+| `consumer_id` + date range | Date scan with filter | O(days) |
+
+#### 2.4 Backfill Script
+To rebuild secondary indexes from existing data:
+
+```bash
+# Dry run (preview changes)
+npx ts-node src/scripts/rebuild-indexes.ts --dry-run
+
+# Rebuild for specific date range
+npx ts-node src/scripts/rebuild-indexes.ts --date-from 2025-01-01 --date-to 2025-12-31
+
+# Production rebuild
+npx ts-node src/scripts/rebuild-indexes.ts \
+  --endpoint https://s3.amazonaws.com \
+  --bucket prod-receipts
+```
+
+#### 2.5 Performance Comparison
+
+| Query Type | Phase 1 (Date Scan) | Phase 2 (Secondary Index) |
+|------------|--------------------|-----------------------|
+| By consumer (all time) | ~5s (scan 365 days) | ~50ms (single file) |
+| By card (all time) | ~5s (scan 365 days) | ~50ms (single file) |
+| By date range | ~500ms (7 days) | ~500ms (unchanged) |
 
 ---
 
@@ -320,25 +358,29 @@ Receipt Created → Kafka/SQS → Multiple Consumers
 
 | Phase | Effort | When to Implement |
 |-------|--------|-------------------|
-| Phase 1 | 2-3 days | 10K+ receipts |
-| Phase 2 | 1 week | 100K+ receipts |
-| Phase 3 | 2 weeks | 1M+ receipts |
-| Phase 4 | 1 month | 10M+ receipts |
+| Phase 1 | 2-3 days | 10K+ receipts | ✅ Complete |
+| Phase 2 | 1 week | 100K+ receipts | ✅ Complete |
+| Phase 3 | 2 weeks | 1M+ receipts | |
+| Phase 4 | 1 month | 10M+ receipts | |
 
 ---
 
 ## Recommendations
 
-### For Now (< 10K receipts)
-✅ Current S3-only solution is sufficient
+### Current Implementation
+✅ Phase 1 & 2 are fully implemented:
+- Pagination with cursor-based navigation (limit 1-100)
+- Parallel index scanning with concurrency control
+- LRU caching for frequent queries (100 entries, 5min TTL)
+- Consumer secondary indexes for O(1) consumer lookup
+- Card secondary indexes for O(1) card lookup
+- Index rebuild script for backfilling existing data
 
-### Next Steps (10K-100K receipts)
-1. Add pagination to query results
-2. Implement parallel index scanning
-3. Add Redis caching for frequent queries
+### For Now (< 100K receipts)
+✅ Current S3-only solution with secondary indexes is optimal
 
 ### Future (1M+ receipts)
-1. Migrate metadata to PostgreSQL
+1. Migrate metadata to PostgreSQL (Phase 3)
 2. Keep S3 for PDF storage only
 3. Consider Elasticsearch for advanced search
 

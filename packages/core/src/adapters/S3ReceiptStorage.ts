@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { compact } from "lodash";
 
 export interface S3Config {
   endpoint: string;
@@ -24,6 +25,16 @@ export interface ReceiptUploadResult {
   pdf_key: string;
   metadata_key: string;
   index_key: string;
+  consumer_index_key: string;
+  card_index_key: string;
+}
+
+/**
+ * Secondary index types for O(1) lookups
+ */
+export enum SecondaryIndexType {
+  CONSUMER = "by-consumer",
+  CARD = "by-card",
 }
 
 export class S3ReceiptStorage {
@@ -48,6 +59,8 @@ export class S3ReceiptStorage {
    * 1. Store PDF at receipts/pdfs/{session_id}.pdf
    * 2. Store metadata at receipts/metadata/{session_id}.json
    * 3. Append to daily index at receipts/index/dt={date}/index.ndjson
+   * 4. Append to consumer index at receipts/index/by-consumer/{consumer_id}/receipts.ndjson
+   * 5. Append to card index at receipts/index/by-card/{card_last_four}/receipts.ndjson
    * 
    * If any step fails, previously uploaded objects are rolled back.
    */
@@ -61,9 +74,11 @@ export class S3ReceiptStorage {
     const pdfKey = `pdfs/${sessionId}.pdf`;
     const metadataKey = `metadata/${sessionId}.json`;
     const indexKey = `index/dt=${date}/index.ndjson`;
+    const consumerIndexKey = this.getSecondaryIndexKey(SecondaryIndexType.CONSUMER, metadata.consumer_id);
+    const cardIndexKey = this.getSecondaryIndexKey(SecondaryIndexType.CARD, metadata.card_last_four);
 
     const uploadedKeys: string[] = [];
-    let previousIndexContent: string | null = null;
+    const indexStates: Map<string, string | null> = new Map();
 
     try {
       // 1. Store PDF
@@ -81,23 +96,65 @@ export class S3ReceiptStorage {
       uploadedKeys.push(metadataKey);
 
       // 3. Append to Daily Index (NDJSON) - save previous state for rollback
-      previousIndexContent = await this.getIndexContent(indexKey);
+      const previousIndexContent = await this.getIndexContent(indexKey);
+      indexStates.set(indexKey, previousIndexContent);
       await this.appendToIndex(fullMetadata, indexKey, previousIndexContent);
 
+      // 4. Append to Consumer Secondary Index
+      const previousConsumerIndex = await this.getIndexContent(consumerIndexKey);
+      indexStates.set(consumerIndexKey, previousConsumerIndex);
+      await this.appendToIndex(fullMetadata, consumerIndexKey, previousConsumerIndex);
+      console.log(`  Consumer Index: ${consumerIndexKey}`);
+
+      // 5. Append to Card Secondary Index
+      const previousCardIndex = await this.getIndexContent(cardIndexKey);
+      indexStates.set(cardIndexKey, previousCardIndex);
+      await this.appendToIndex(fullMetadata, cardIndexKey, previousCardIndex);
+      console.log(`  Card Index: ${cardIndexKey}`);
+
       console.log(`Receipt stored: ${sessionId}`);
-      return { pdf_key: pdfKey, metadata_key: metadataKey, index_key: indexKey };
+      return {
+        pdf_key: pdfKey,
+        metadata_key: metadataKey,
+        index_key: indexKey,
+        consumer_index_key: consumerIndexKey,
+        card_index_key: cardIndexKey,
+      };
 
     } catch (error) {
       console.error(`Transaction failed, rolling back...`);
-      await this.rollback(uploadedKeys, indexKey, previousIndexContent);
+      await this.rollback(uploadedKeys, indexStates);
       throw error;
+    }
+  }
+
+  /**
+   * Get the S3 key for a secondary index
+   */
+  getSecondaryIndexKey(type: SecondaryIndexType, value: string): string {
+    return `index/${type}/${value}/receipts.ndjson`;
+  }
+
+  /**
+   * Read all entries from a secondary index file
+   */
+  async readSecondaryIndex(type: SecondaryIndexType, value: string): Promise<ReceiptMetadata[]> {
+    const key = this.getSecondaryIndexKey(type, value);
+    try {
+      const content = await this.getIndexContent(key);
+      if (!content) return [];
+      
+      const lines = compact(content.split("\n"));
+      return lines.map((line) => JSON.parse(line) as ReceiptMetadata);
+    } catch (err: any) {
+      if (err.name === "NoSuchKey") return [];
+      throw err;
     }
   }
 
   private async rollback(
     keysToDelete: string[],
-    indexKey: string,
-    previousIndexContent: string | null
+    indexStates: Map<string, string | null>
   ): Promise<void> {
     // Delete uploaded objects
     for (const key of keysToDelete) {
@@ -111,20 +168,24 @@ export class S3ReceiptStorage {
       }
     }
 
-    // Restore previous index content
-    if (previousIndexContent !== null) {
-      try {
-        await this.client.send(
-          new PutObjectCommand({
-            Bucket: this.bucket,
-            Key: indexKey,
-            Body: previousIndexContent,
-            ContentType: "application/x-ndjson",
-          })
-        );
-        console.log(`  Rolled back index: ${indexKey}`);
-      } catch (err) {
-        console.error(`  Failed to rollback index:`, (err as Error).message);
+    // Restore previous index content for all affected indexes
+    const indexKeys = Array.from(indexStates.keys());
+    for (const indexKey of indexKeys) {
+      const previousContent = indexStates.get(indexKey);
+      if (previousContent !== null && previousContent !== undefined) {
+        try {
+          await this.client.send(
+            new PutObjectCommand({
+              Bucket: this.bucket,
+              Key: indexKey,
+              Body: previousContent,
+              ContentType: "application/x-ndjson",
+            })
+          );
+          console.log(`  Rolled back index: ${indexKey}`);
+        } catch (err) {
+          console.error(`  Failed to rollback index ${indexKey}:`, (err as Error).message);
+        }
       }
     }
   }

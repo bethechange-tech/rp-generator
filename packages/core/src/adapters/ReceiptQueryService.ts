@@ -5,7 +5,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { chunk, orderBy, findIndex, last, compact, filter } from "lodash";
-import { S3Config, ReceiptMetadata } from "./S3ReceiptStorage";
+import { S3Config, ReceiptMetadata, SecondaryIndexType } from "./S3ReceiptStorage";
 
 // ============================================
 // LRU CACHE IMPLEMENTATION
@@ -221,16 +221,47 @@ export class ReceiptQueryService {
 
   /**
    * Query receipts using SQL-like filtering on NDJSON index files.
-   * Scans daily index files within the date range with parallel processing.
+   * 
+   * Query Strategy:
+   * 1. If consumer_id is specified (without date range): Use consumer secondary index (O(1))
+   * 2. If card_last_four is specified (without date range or consumer): Use card secondary index (O(1))
+   * 3. Otherwise: Scan daily index files within the date range with parallel processing
+   * 
    * Supports pagination via limit and cursor parameters.
    */
   async query(query: ReceiptQuery): Promise<QueryResult> {
-    const dates = this.getDateRange(query.date_from, query.date_to);
     const limit = Math.min(query.limit ?? 50, 100); // Cap at 100
     const cursor = this.parseCursor(query.cursor);
     
-    // Parallel scan with concurrency control
-    const allRecords = await this.parallelScan(dates, query);
+    // Determine query strategy and fetch records
+    let allRecords: ReceiptMetadata[];
+    let scannedDates: string[];
+    const strategy = this.determineQueryStrategy(query);
+    
+    if (strategy.type === "secondary-consumer") {
+      // O(1) lookup via consumer secondary index
+      console.log(`Using consumer secondary index for: ${query.consumer_id}`);
+      allRecords = await this.querySecondaryIndex(
+        SecondaryIndexType.CONSUMER,
+        query.consumer_id!,
+        query
+      );
+      scannedDates = [];
+    } else if (strategy.type === "secondary-card") {
+      // O(1) lookup via card secondary index
+      console.log(`Using card secondary index for: ${query.card_last_four}`);
+      allRecords = await this.querySecondaryIndex(
+        SecondaryIndexType.CARD,
+        query.card_last_four!,
+        query
+      );
+      scannedDates = [];
+    } else {
+      // Parallel scan with date range (default strategy)
+      const dates = this.getDateRange(query.date_from, query.date_to);
+      allRecords = await this.parallelScan(dates, query);
+      scannedDates = dates;
+    }
     
     // Sort by date descending, then by session_id using lodash orderBy
     const sortedRecords = orderBy(allRecords, ["payment_date", "session_id"], ["desc", "desc"]);
@@ -259,12 +290,81 @@ export class ReceiptQueryService {
 
     return {
       records: paginatedRecords,
-      scanned_dates: dates,
+      scanned_dates: scannedDates,
       total_count: totalCount,
       next_cursor: nextCursor,
       has_more: hasMore,
       page_size: limit,
     };
+  }
+
+  /**
+   * Determine the best query strategy based on parameters
+   */
+  private determineQueryStrategy(query: ReceiptQuery): { type: "secondary-consumer" | "secondary-card" | "date-scan" } {
+    const hasDateRange = query.date_from || query.date_to;
+    
+    // Prefer consumer index for consumer_id queries without date range
+    // (Date range queries still use date scanning for efficiency)
+    if (query.consumer_id && !hasDateRange) {
+      return { type: "secondary-consumer" };
+    }
+    
+    // Use card index for card_last_four queries without date range or consumer filter
+    if (query.card_last_four && !hasDateRange && !query.consumer_id) {
+      return { type: "secondary-card" };
+    }
+    
+    // Default to date-based scanning
+    return { type: "date-scan" };
+  }
+
+  /**
+   * Query a secondary index file (consumer or card)
+   */
+  private async querySecondaryIndex(
+    indexType: SecondaryIndexType,
+    indexValue: string,
+    query: ReceiptQuery
+  ): Promise<ReceiptMetadata[]> {
+    const indexKey = `index/${indexType}/${indexValue}/receipts.ndjson`;
+    const cacheKey = `${indexType}:${indexValue}:${this.buildCacheKey("", query)}`;
+    
+    // Check cache first
+    if (this.enableCache) {
+      const cached = this.cache.get(cacheKey);
+      if (cached) {
+        console.log(`  Cache hit for ${indexType}:${indexValue}`);
+        return cached;
+      }
+    }
+    
+    try {
+      const records = await this.queryWithClientFilter(indexKey, query);
+      
+      // Apply additional filters (date range, amount, etc.)
+      const filteredRecords = filter(records, (record) => {
+        // Date range filter
+        if (query.date_from && record.payment_date < query.date_from) return false;
+        if (query.date_to && record.payment_date > query.date_to) return false;
+        
+        // Other filters are already applied in queryWithClientFilter
+        return true;
+      });
+      
+      // Cache the results
+      if (this.enableCache) {
+        this.cache.set(cacheKey, filteredRecords);
+      }
+      
+      return filteredRecords;
+    } catch (err: any) {
+      if (err.name === "NoSuchKey") {
+        console.log(`  No secondary index found for ${indexType}:${indexValue}`);
+        return [];
+      }
+      throw err;
+    }
   }
 
   /**
@@ -283,7 +383,7 @@ export class ReceiptQueryService {
       const chunkResults = await Promise.all(
         dateChunk.map((date) => this.queryDateWithCache(date, query))
       );
-      
+
       for (const records of chunkResults) {
         allRecords.push(...records);
       }
