@@ -4,5 +4,4 @@ export { FileTemplateProvider, PuppeteerPdfRenderer, S3ReceiptStorage, ReceiptQu
 export type { S3Config, ReceiptMetadata, ReceiptUploadResult, ReceiptQuery, QueryResult, QueryServiceConfig } from "./adapters";
 export { ReceiptPdfGenerator } from "./core/ReceiptPdfGenerator";
 
-// Client-safe exports (no Node.js dependencies)
 export { REQUIRED_FIELDS as RequiredFields, OPTIONAL_FIELDS as OptionalFields } from "./constants";

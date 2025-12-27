@@ -51,7 +51,6 @@ export class QueryFilter {
     if (query.card_last_four) builder = builder.where("s.card_last_four", query.card_last_four);
     if (query.receipt_number) builder = builder.where("s.receipt_number", query.receipt_number);
 
-    // Amount filtering in pence (amount_min/amount_max are in pounds, convert to pence)
     if (query.amount_min !== undefined) {
       const minPence = Money.fromPounds(query.amount_min).toPence();
       builder = builder.where(sql.gte("s.amount_pence", minPence));
@@ -77,7 +76,6 @@ export class QueryFilter {
     if (query.receipt_number && record.receipt_number !== query.receipt_number) return false;
 
     if (query.amount_min !== undefined || query.amount_max !== undefined) {
-      // Use amount_pence if available (new records), fallback to parsing amount string (old records)
       const amountPence = record.amount_pence ?? Money.parse(record.amount).toPence();
       const minPence = query.amount_min !== undefined ? Money.fromPounds(query.amount_min).toPence() : undefined;
       const maxPence = query.amount_max !== undefined ? Money.fromPounds(query.amount_max).toPence() : undefined;

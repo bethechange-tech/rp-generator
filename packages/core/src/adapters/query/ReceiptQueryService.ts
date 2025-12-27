@@ -38,7 +38,6 @@ export class ReceiptQueryService implements IReceiptQueryService {
 
   /** Query receipts with filtering and pagination */
   async query(query: ReceiptQuery): Promise<QueryResult> {
-    // Return empty result if no search criteria provided
     if (!QueryFilter.hasSearchCriteria(query)) {
       return {
         records: [],

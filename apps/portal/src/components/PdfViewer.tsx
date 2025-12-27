@@ -1,7 +1,7 @@
 "use client";
 
 import { useSignedUrl } from "@/lib/hooks";
-import { Spinner, Card, WarningIcon } from "./ui";
+import { Spinner, WarningIcon } from "./ui";
 
 interface PdfViewerProps {
   pdfKey: string;

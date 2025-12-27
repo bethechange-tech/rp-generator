@@ -50,12 +50,10 @@ export class ReceiptPdfGenerator {
   private populateTemplate(template: string, data: ReceiptData): string {
     let result = template;
 
-    // Handle optional discount section ([\s\S] matches any char including newlines)
     if (!data.discount_amount || data.discount_amount === "$0.00" || data.discount_amount === "0") {
       result = result.replace(/<div class="cost-row discount">[\s\S]*?<\/div>/, "");
     }
 
-    // Set defaults for optional fields using lodash defaults
     const dataWithDefaults = defaults({}, data, {
       qr_code_svg: ReceiptPdfGenerator.DEFAULT_QR_CODE,
       company_logo_svg: ReceiptPdfGenerator.DEFAULT_LOGO,
@@ -64,7 +62,6 @@ export class ReceiptPdfGenerator {
       discount_amount: "",
     });
 
-    // Replace all {{placeholder}} with actual values using lodash forEach
     forEach(dataWithDefaults, (value, key) => {
       const placeholder = new RegExp(`{{${key}}}`, "g");
       result = result.replace(placeholder, value);
@@ -80,7 +77,6 @@ export class ReceiptPdfGenerator {
     );
   }
 
-  // Factory method for convenience
   static create(templateDir?: string): ReceiptPdfGenerator {
     const dir = templateDir || path.join(__dirname, "..", "..", "template");
     return new ReceiptPdfGenerator(

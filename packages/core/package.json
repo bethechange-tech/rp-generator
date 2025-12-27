@@ -30,6 +30,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.958.0",
     "@aws-sdk/s3-request-presigner": "^3.958.0",
+    "decimal.js": "^10.6.0",
     "lodash": "^4.17.21",
     "puppeteer": "^24.0.0",
     "sql-bricks": "^3.0.1"
@@ -37,6 +38,7 @@
   "devDependencies": {
     "@ev-receipt/typescript-config": "*",
     "@testcontainers/minio": "^11.10.0",
+    "@types/decimal.js": "^0.0.32",
     "@types/lodash": "^4.17.21",
     "@types/node": "^20.10.5",
     "@types/sql-bricks": "^2.0.5",
