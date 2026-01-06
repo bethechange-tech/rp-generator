@@ -17,7 +17,7 @@ const EXAMPLE_SESSION = `{
   "party_id": "VCH",
   "id": "session-12345",
   "start_date_time": "2025-01-06T10:00:00Z",
-  "end_date_time": "2025-01-06T11:30:00Z",
+  "end_date_time": "2025-01-06T12:00:00Z",
   "kwh": 45.5,
   "cdr_token": {
     "uid": "012345678",
@@ -34,15 +34,22 @@ const EXAMPLE_SESSION = `{
       "start_date_time": "2025-01-06T10:00:00Z",
       "dimensions": [
         { "type": "ENERGY", "volume": 45.5 },
-        { "type": "PARKING_TIME", "volume": 0 }
+        { "type": "TIME", "volume": 1.5 }
+      ]
+    },
+    {
+      "start_date_time": "2025-01-06T11:30:00Z",
+      "dimensions": [
+        { "type": "PARKING_TIME", "volume": 0.5 }
       ]
     }
   ],
   "total_cost": { "excl_vat": 17.43, "incl_vat": 20.92 },
   "total_energy": 45.5,
-  "total_parking_time": 0,
+  "total_time": 1.5,
+  "total_parking_time": 0.5,
   "status": "COMPLETED",
-  "last_updated": "2025-01-06T11:30:00Z"
+  "last_updated": "2025-01-06T12:00:00Z"
 }`;
 
 const EXAMPLE_TARIFF = `{
@@ -79,7 +86,7 @@ const EXAMPLE_CDR = `{
   "party_id": "VCH",
   "id": "CDR-2025-001234",
   "start_date_time": "2025-01-06T10:00:00Z",
-  "end_date_time": "2025-01-06T11:30:00Z",
+  "end_date_time": "2025-01-06T12:00:00Z",
   "session_id": "session-12345",
   "cdr_token": {
     "country_code": "GB",
@@ -104,51 +111,83 @@ const EXAMPLE_CDR = `{
     "connector_power_type": "DC"
   },
   "currency": "GBP",
-  "tariffs": [
-    {
-      "currency": "GBP",
-      "elements": [
-        {
-          "price_components": [
-            { "type": "ENERGY", "price": 0.35, "step_size": 1, "vat": 20 },
-            { "type": "PARKING_TIME", "price": 0.10, "step_size": 60, "vat": 20 }
-          ]
-        }
-      ]
-    }
-  ],
   "charging_periods": [
     {
       "start_date_time": "2025-01-06T10:00:00Z",
       "dimensions": [
         { "type": "ENERGY", "volume": 45.5 },
-        { "type": "PARKING_TIME", "volume": 0 }
+        { "type": "TIME", "volume": 1.5 }
+      ],
+      "tariff_id": "TARIFF-001"
+    },
+    {
+      "start_date_time": "2025-01-06T11:30:00Z",
+      "dimensions": [
+        { "type": "PARKING_TIME", "volume": 0.5 }
       ],
       "tariff_id": "TARIFF-001"
     }
   ],
-  "total_cost": { "excl_vat": 13.27, "incl_vat": 15.93 },
+  "total_cost": { "excl_vat": 16.30, "incl_vat": 19.56 },
   "total_energy": 45.5,
-  "total_energy_cost": { "excl_vat": 13.27, "incl_vat": 15.93 },
-  "total_parking_time": 0,
-  "total_parking_cost": { "excl_vat": 0, "incl_vat": 0 },
-  "last_updated": "2025-01-06T11:30:00Z"
+  "total_energy_cost": { "excl_vat": 15.93, "incl_vat": 19.11 },
+  "total_time": 1.5,
+  "total_parking_time": 0.5,
+  "total_parking_cost": { "excl_vat": 0.05, "incl_vat": 0.06 },
+  "last_updated": "2025-01-06T12:00:00Z"
+}`;
+
+const EXAMPLE_CDR_TARIFF = `{
+  "country_code": "GB",
+  "party_id": "VCH",
+  "id": "TARIFF-001",
+  "currency": "GBP",
+  "type": "REGULAR",
+  "tariff_alt_text": [
+    { "language": "en", "text": "Standard DC fast charging tariff" }
+  ],
+  "elements": [
+    {
+      "price_components": [
+        { "type": "ENERGY", "price": 0.35, "step_size": 1, "vat": 20 }
+      ]
+    },
+    {
+      "price_components": [
+        { "type": "PARKING_TIME", "price": 0.10, "step_size": 60, "vat": 20 }
+      ],
+      "restrictions": {
+        "start_time": "09:00",
+        "end_time": "18:00",
+        "day_of_week": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+      }
+    }
+  ],
+  "last_updated": "2025-01-01T00:00:00Z"
 }`;
 
 const EXAMPLE_RECORD = `{
   "start_date_time": "2025-01-06T10:00:00Z",
-  "end_date_time": "2025-01-06T11:30:00Z",
+  "end_date_time": "2025-01-06T12:00:00Z",
   "kwh": 45.5,
   "charging_periods": [
     {
       "start_date_time": "2025-01-06T10:00:00Z",
       "dimensions": [
         { "type": "ENERGY", "volume": 45.5 },
-        { "type": "PARKING_TIME", "volume": 0 }
+        { "type": "TIME", "volume": 1.5 }
+      ]
+    },
+    {
+      "start_date_time": "2025-01-06T11:30:00Z",
+      "dimensions": [
+        { "type": "PARKING_TIME", "volume": 0.5 }
       ]
     }
   ],
-  "total_energy": 45.5
+  "total_energy": 45.5,
+  "total_time": 1.5,
+  "total_parking_time": 0.5
 }`;
 
 const TYPE_INFO = {
@@ -158,8 +197,8 @@ const TYPE_INFO = {
     icon: "⚡",
   },
   cdr: {
-    title: "OCPI CDR",
-    description: "Calculate from a Charge Detail Record with embedded tariffs",
+    title: "OCPI CDR + Tariff",
+    description: "Calculate from a Charge Detail Record with separate tariff",
     icon: "📄",
   },
   record: {
@@ -179,6 +218,7 @@ export function OcpiCalculatorForm() {
   const [sessionJson, setSessionJson] = useState(EXAMPLE_SESSION);
   const [tariffJson, setTariffJson] = useState(EXAMPLE_TARIFF);
   const [cdrJson, setCdrJson] = useState(EXAMPLE_CDR);
+  const [cdrTariffJson, setCdrTariffJson] = useState(EXAMPLE_CDR_TARIFF);
   const [recordJson, setRecordJson] = useState(EXAMPLE_RECORD);
   
   const { result, error, isLoading, calculate, reset } = useCostCalculator();
@@ -213,7 +253,8 @@ export function OcpiCalculatorForm() {
         await calculate({ type: "record", record, tariff });
       } else {
         const cdr = JSON.parse(cdrJson);
-        await calculate({ type: "cdr", cdr });
+        const tariff = JSON.parse(cdrTariffJson);
+        await calculate({ type: "cdr", cdr, tariff });
       }
     } catch {
       await calculate({ type: "session", session: {}, tariff: {} });
@@ -226,6 +267,7 @@ export function OcpiCalculatorForm() {
     setSessionJson(EXAMPLE_SESSION);
     setTariffJson(EXAMPLE_TARIFF);
     setCdrJson(EXAMPLE_CDR);
+    setCdrTariffJson(EXAMPLE_CDR_TARIFF);
     setRecordJson(EXAMPLE_RECORD);
   };
 
@@ -293,6 +335,8 @@ export function OcpiCalculatorForm() {
               setTariffJson={setTariffJson}
               cdrJson={cdrJson}
               setCdrJson={setCdrJson}
+              cdrTariffJson={cdrTariffJson}
+              setCdrTariffJson={setCdrTariffJson}
               recordJson={recordJson}
               setRecordJson={setRecordJson}
             />
@@ -465,6 +509,8 @@ function DataInputSection({
   setTariffJson,
   cdrJson,
   setCdrJson,
+  cdrTariffJson,
+  setCdrTariffJson,
   recordJson,
   setRecordJson,
 }: {
@@ -475,6 +521,8 @@ function DataInputSection({
   setTariffJson: (v: string) => void;
   cdrJson: string;
   setCdrJson: (v: string) => void;
+  cdrTariffJson: string;
+  setCdrTariffJson: (v: string) => void;
   recordJson: string;
   setRecordJson: (v: string) => void;
 }) {
@@ -521,14 +569,22 @@ function DataInputSection({
   }
 
   return (
-    <JsonInputCard
-      label="OCPI CDR (Charge Detail Record)"
-      description="Complete CDR with embedded tariffs - costs calculated from tariff elements"
-      value={cdrJson}
-      onChange={setCdrJson}
-      rows={22}
-      fullWidth
-    />
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <JsonInputCard
+        label="OCPI CDR (Charge Detail Record)"
+        description="CDR with charging periods and session details"
+        value={cdrJson}
+        onChange={setCdrJson}
+        rows={22}
+      />
+      <JsonInputCard
+        label="OCPI Tariff"
+        description="Separate tariff for cost calculation"
+        value={cdrTariffJson}
+        onChange={setCdrTariffJson}
+        rows={22}
+      />
+    </div>
   );
 }
 

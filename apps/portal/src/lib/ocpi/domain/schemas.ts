@@ -390,6 +390,7 @@ export const CalculateCostRequestSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("cdr"),
     cdr: CdrSchema,
+    tariff: TariffSchema.optional(),
   }),
   z.object({
     type: z.literal("record"),

@@ -46,11 +46,18 @@ export class CalculateCostHandler {
           validatedRequest.tariff as Tariff
         );
       } else {
-        // Calculate from CDR (may include tariffs or use totals)
+        // Calculate from CDR with optional separate tariff
         sessionPayload = validatedRequest.cdr as Record<string, unknown>;
-        tariffPayload = (sessionPayload.tariffs as Record<string, unknown>[])?.[0];
         const cdr = PayloadTransformer.toCdr(sessionPayload);
-        breakdown = OcpiCostCalculator.calculateFromCdr(cdr);
+        
+        // Use separate tariff if provided, otherwise use embedded tariffs
+        if (validatedRequest.tariff) {
+          tariffPayload = validatedRequest.tariff as Record<string, unknown>;
+          breakdown = OcpiCostCalculator.calculate(cdr, validatedRequest.tariff as Tariff);
+        } else {
+          tariffPayload = (sessionPayload.tariffs as Record<string, unknown>[])?.[0];
+          breakdown = OcpiCostCalculator.calculateFromCdr(cdr);
+        }
       }
 
       const response = ResponseBuilder.success(breakdown, sessionPayload, tariffPayload);
