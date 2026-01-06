@@ -7,3 +7,17 @@ export type { ReceiptQuery, QueryResult, QueryServiceConfig } from "./query";
 export { FileTemplateProvider, PuppeteerPdfRenderer } from "./rendering";
 
 export { LRUCache, ParallelScanner, DateRange, Cursor } from "./shared";
+
+// OCPI Cost Calculator
+export { OcpiCostCalculator } from "./shared/money/ocpi";
+export type { 
+  ChargeRecord, 
+  Tariff, 
+  CostBreakdown, 
+  Cdr, 
+  OcpiSession,
+  TariffElement,
+  PriceComponent,
+  ChargingPeriod,
+  TariffRestriction,
+} from "./shared/money/ocpi";

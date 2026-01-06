@@ -374,6 +374,303 @@ npm run test:watch # Watch mode
 3. **API Endpoints** - Health check, create receipt, get signed URLs
 4. **Rollback** - Verify cleanup on partial failures
 
+## Signed URL Architecture
+
+The portal uses **pre-signed S3 URLs** to securely serve PDF receipts without exposing S3 credentials to the client. This pattern provides:
+
+- **Security** - Clients never see S3 credentials
+- **Time-limited access** - URLs expire after 1 hour (configurable)
+- **Direct S3 download** - No proxy bottleneck, PDFs stream directly from S3
+- **Audit trail** - All URL generation is logged server-side
+
+### End-to-End Flow
+
+```
+┌─────────────┐     1. GET /api/signed-url?key=pdfs/session-123.pdf
+│   Browser   │ ──────────────────────────────────────────────────────────►
+│  (Client)   │
+│             │ ◄──────────────────────────────────────────────────────────
+│             │     2. { url: "https://s3...?X-Amz-Signature=...", expires_in: 3600 }
+│             │
+│             │     3. GET https://s3.../pdfs/session-123.pdf?X-Amz-Signature=...
+│             │ ──────────────────────────────────────────────────────────►
+│             │
+│             │ ◄──────────────────────────────────────────────────────────
+└─────────────┘     4. PDF binary stream (directly from S3)
+
+┌─────────────┐
+│   Portal    │ ◄──── 1. Request comes to Next.js API route
+│   (Next.js) │
+│             │ ────► Validates key parameter
+│   /api/     │ ────► Calls QueryService.getSignedPdfUrl()
+│ signed-url  │ ────► Returns signed URL to client
+└─────────────┘
+
+┌─────────────┐
+│    S3 /     │ ◄──── 3. Client fetches PDF directly with signed URL
+│   MinIO     │ ────► Validates signature, expiry, and permissions
+│             │ ────► Streams PDF bytes to client
+└─────────────┘
+```
+
+### Step-by-Step Breakdown
+
+#### Step 1: Client Requests Signed URL
+
+The React component calls the portal API:
+
+```typescript
+// apps/portal/src/lib/hooks/useSignedUrl.ts
+export function useSignedUrl(pdfKey: string) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetch() {
+      const response = await ApiClientFactory.get().get<ApiResponse<SignedUrlData>>(
+        `/signed-url`,
+        { params: { key: pdfKey } }  // e.g., key=pdfs/session-12345.pdf
+      );
+      
+      if (response.data.success) {
+        setUrl(response.data.data.url);
+      }
+    }
+    fetch();
+  }, [pdfKey]);
+
+  return { url, loading, error };
+}
+```
+
+#### Step 2: Handler Validates and Generates URL
+
+The API route delegates to the handler:
+
+```typescript
+// apps/portal/src/app/api/signed-url/route.ts
+import { NextRequest } from "next/server";
+import { GetSignedUrlHandler } from "@/lib/handlers";
+
+export async function GET(request: NextRequest) {
+  return GetSignedUrlHandler.handle(request);
+}
+```
+
+The handler validates the request and generates the signed URL:
+
+```typescript
+// apps/portal/src/lib/handlers/signed-url/GetSignedUrlHandler.ts
+export class GetSignedUrlHandler {
+  private static readonly TTL_SECONDS = 3600; // 1 hour
+
+  static validateKey(key: string | null): { valid: false; error: string } | { valid: true } {
+    if (!key) {
+      return { valid: false, error: "Missing 'key' parameter" };
+    }
+    if (!key.endsWith(".pdf")) {
+      return { valid: false, error: "Invalid PDF key" };
+    }
+    return { valid: true };
+  }
+
+  static async handle(request: NextRequest): Promise<NextResponse> {
+    const pdfKey = request.nextUrl.searchParams.get("key");
+
+    // Validate the key
+    const validation = this.validateKey(pdfKey);
+    if (!validation.valid) {
+      return NextResponse.json(
+        { success: false, error: validation.error },
+        { status: 400 }
+      );
+    }
+
+    // Generate signed URL via QueryService
+    const queryService = QueryServiceFactory.get();
+    const signedUrl = await queryService.getSignedPdfUrl(pdfKey!, this.TTL_SECONDS);
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        url: signedUrl,
+        expires_in: this.TTL_SECONDS,
+        pdf_key: pdfKey,
+      },
+    });
+  }
+}
+```
+
+#### Step 3: S3 Client Generates Pre-signed URL
+
+The QueryService uses the AWS SDK to create a time-limited signed URL:
+
+```typescript
+// packages/core/src/adapters/query/ReceiptQueryService.ts
+async getSignedPdfUrl(pdfKey: string, expiresIn: number = 3600): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: this.bucket,
+    Key: pdfKey,
+  });
+  
+  return getSignedUrl(this.s3Client, command, { expiresIn });
+}
+```
+
+The returned URL looks like:
+
+```
+https://s3.eu-west-1.amazonaws.com/receipts/pdfs/session-12345.pdf
+  ?X-Amz-Algorithm=AWS4-HMAC-SHA256
+  &X-Amz-Credential=AKIAIOSFODNN7EXAMPLE/20260106/eu-west-1/s3/aws4_request
+  &X-Amz-Date=20260106T120000Z
+  &X-Amz-Expires=3600
+  &X-Amz-SignedHeaders=host
+  &X-Amz-Signature=abc123...
+```
+
+#### Step 4: Client Displays PDF
+
+The React component renders an iframe with the signed URL:
+
+```tsx
+// apps/portal/src/components/PdfViewer.tsx
+export function PdfViewer({ pdfKey }: { pdfKey: string }) {
+  const { url, loading, error } = useSignedUrl(pdfKey);
+
+  if (loading) return <Spinner />;
+  if (error) return <ErrorMessage error={error} />;
+
+  return (
+    <iframe
+      src={url || ""}
+      className="w-full h-[600px]"
+      title="Receipt PDF"
+    />
+  );
+}
+```
+
+### API Response Format
+
+#### Success Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://s3.../pdfs/session-12345.pdf?X-Amz-Signature=...",
+    "expires_in": 3600,
+    "pdf_key": "pdfs/session-12345.pdf"
+  }
+}
+```
+
+#### Error Responses
+
+```json
+// Missing key parameter
+{
+  "success": false,
+  "error": "Missing 'key' parameter"
+}
+
+// Invalid key format
+{
+  "success": false,
+  "error": "Invalid PDF key"
+}
+
+// S3 error
+{
+  "success": false,
+  "error": "The specified key does not exist."
+}
+```
+
+### Security Considerations
+
+| Aspect | Implementation |
+|--------|----------------|
+| **Authentication** | Portal API should be protected (add auth middleware as needed) |
+| **Key Validation** | Only `.pdf` files allowed, prevents directory traversal |
+| **Expiration** | URLs expire after 1 hour (TTL_SECONDS = 3600) |
+| **HTTPS** | All S3 URLs use HTTPS |
+| **No Credentials** | Client never sees S3 access keys |
+| **Audit Logging** | Handler logs all requests (extend as needed) |
+
+### Testing Signed URLs
+
+#### Using cURL
+
+```bash
+# Step 1: Get signed URL from portal API
+curl "http://localhost:3000/api/signed-url?key=pdfs/session-12345.pdf"
+
+# Response:
+# {"success":true,"data":{"url":"http://localhost:9000/receipts/pdfs/session-12345.pdf?X-Amz-...","expires_in":3600,"pdf_key":"pdfs/session-12345.pdf"}}
+
+# Step 2: Download PDF using signed URL
+curl -o receipt.pdf "http://localhost:9000/receipts/pdfs/session-12345.pdf?X-Amz-..."
+```
+
+#### Using JavaScript
+
+```typescript
+// Fetch signed URL
+const response = await fetch('/api/signed-url?key=pdfs/session-12345.pdf');
+const { data } = await response.json();
+
+// Use the signed URL
+window.open(data.url, '_blank');  // Open in new tab
+```
+
+#### Using React Native
+
+```typescript
+// 1. Fetch signed URL and display PDF
+import { useState, useEffect } from 'react';
+import { View, ActivityIndicator, Linking } from 'react-native';
+import Pdf from 'react-native-pdf'; // npm install react-native-pdf react-native-blob-util
+
+const API_URL = 'https://your-api.com';
+
+export function ReceiptViewer({ sessionId }: { sessionId: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/signed-url?key=pdfs/${sessionId}.pdf`)
+      .then(res => res.json())
+      .then(({ data }) => setUrl(data.url));
+  }, [sessionId]);
+
+  if (!url) return <ActivityIndicator />;
+
+  return <Pdf source={{ uri: url }} style={{ flex: 1 }} />;
+}
+
+// 2. Or open in external browser/viewer
+async function openReceipt(sessionId: string) {
+  const res = await fetch(`${API_URL}/api/signed-url?key=pdfs/${sessionId}.pdf`);
+  const { data } = await res.json();
+  await Linking.openURL(data.url);
+}
+```
+
+### Customizing TTL
+
+To change the URL expiration time, update the handler:
+
+```typescript
+// apps/portal/src/lib/handlers/signed-url/GetSignedUrlHandler.ts
+export class GetSignedUrlHandler {
+  private static readonly TTL_SECONDS = 7200; // 2 hours instead of 1
+  // ...
+}
+```
+
 ## Environment Variables
 
 | Variable | Default | Description |

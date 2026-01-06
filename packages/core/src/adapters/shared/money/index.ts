@@ -12,6 +12,8 @@ export type {
   CostBreakdown,
   CostCalculator,
   CostFormatter,
+  ChargeRecord,
+  Cdr,
 } from "./ocpi";
 export { VolumeCalculator, RestrictionEvaluator, ComponentCostCalculator } from "./ocpi";
 
