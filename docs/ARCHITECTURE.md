@@ -29,7 +29,91 @@ The EV Receipt System generates, stores, and retrieves PDF receipts for electric
 | **Core** | TypeScript Library | Shared logic: PDF generation, S3 storage, queries |
 | **Storage** | MinIO (local) / S3 (prod) | PDF and metadata storage |
 
-### Data Flow
+---
+
+## Company Registry
+
+The system supports a **Company Registry** for pre-registered CPO (Charge Point Operator) companies. When creating a receipt, you can provide a `company_ref` instead of manually including company details in every request.
+
+### How It Works
+
+1. Companies are registered in the API's `companyRegistry.ts`
+2. When creating a receipt, pass `company_ref` (e.g., `"voltcharge"`)
+3. The API looks up and merges company info into the receipt data
+4. If `company_ref` is not found, a 400 error is returned
+
+### Available Companies
+
+| company_ref | Company Name | Tagline |
+|-------------|--------------|---------|
+| `voltcharge` | VoltCharge UK | Fast & Clean Energy |
+| `greencharge` | GreenCharge | Powering the Future |
+| `rapidev` | RapidEV | Charge in Minutes |
+
+### Company Info Fields
+
+When using `company_ref`, the following fields are auto-populated:
+
+```json
+{
+  "company_name": "VoltCharge UK",
+  "company_tagline": "Fast & Clean Energy",
+  "company_logo_svg": "<svg>...</svg>",
+  "company_website": "www.voltcharge.co.uk",
+  "support_email": "support@voltcharge.co.uk",
+  "support_phone": "0800-VOLTCHG"
+}
+```
+
+### Usage Example
+
+**Without company_ref** (manual company info):
+```json
+{
+  "session_id": "session-001",
+  "consumer_id": "consumer-john",
+  "receipt": {
+    "company_name": "VoltCharge UK",
+    "company_tagline": "Fast & Clean Energy",
+    "company_logo_svg": "<svg>...</svg>",
+    "company_website": "www.voltcharge.co.uk",
+    "receipt_number": "EVC-2025-41823",
+    ...
+  }
+}
+```
+
+**With company_ref** (auto-populated):
+```json
+{
+  "session_id": "session-001",
+  "consumer_id": "consumer-john",
+  "company_ref": "voltcharge",
+  "receipt": {
+    "receipt_number": "EVC-2025-41823",
+    ...
+  }
+}
+```
+
+### Adding New Companies
+
+Edit `apps/api/src/lib/companyRegistry.ts`:
+
+```typescript
+companyRegistry.set("newcompany", {
+  company_name: "New Company Ltd",
+  company_tagline: "Your Tagline",
+  company_logo_svg: `<svg>...</svg>`,
+  company_website: "www.newcompany.com",
+  support_email: "support@newcompany.com",
+  support_phone: "0800-123456",
+});
+```
+
+---
+
+## Data Flow
 
 #### 1. Receipt Creation
 ```

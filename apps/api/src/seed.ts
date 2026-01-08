@@ -1,177 +1,169 @@
+import "dotenv/config";
 import { ReceiptPdfGenerator } from "@ev-receipt/core";
 import type { ReceiptData } from "@ev-receipt/core";
-import { StorageFactory, QueryServiceFactory } from "./config";
+import { StorageFactory } from "./config";
 import { CompanyRegistry } from "./lib/companyRegistry";
+import { faker } from "@faker-js/faker";
+import { PromisePool } from "@supercharge/promise-pool";
+import * as fs from "fs";
+import * as path from "path";
 
-// Sample receipt data for seeding
-const sampleReceipts: Array<{
+const COMPANIES = ["voltcharge", "greencharge", "rapidev"];
+const CONNECTOR_TYPES = ["CCS Type 2", "CHAdeMO", "Type 2 AC"];
+const CHARGER_POWERS = ["50 kW DC Charger", "100 kW DC Charger", "150 kW DC Fast Charger", "350 kW Ultra-Fast"];
+const VEHICLE_MAKES = ["Tesla", "Nissan", "Porsche", "BMW", "Audi", "Mercedes", "VW", "Hyundai", "Kia"];
+
+interface SeedCredentials {
   session_id: string;
   consumer_id: string;
-  company_ref: string;
-  receipt: Omit<ReceiptData, 'company_name' | 'company_tagline' | 'company_logo_svg' | 'company_website' | 'support_email' | 'support_phone'>;
-}> = [
-  {
-    session_id: "seed-session-001",
-    consumer_id: "consumer-john-doe",
-    company_ref: "voltcharge",
+  card_last_four: string;
+  receipt_number: string;
+  payment_date: string;
+  amount: string;
+}
+
+function generateRandomDate(): Date {
+  const now = new Date();
+  const daysAgo = faker.number.int({ min: 1, max: 365 });
+  return new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+}
+
+function formatReceiptDate(date: Date): string {
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function formatPaymentDate(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
+
+function generateReceipt(index: number) {
+  const date = generateRandomDate();
+  const companyRef = faker.helpers.arrayElement(COMPANIES);
+  const prefix = companyRef === "voltcharge" ? "EVC" : companyRef === "greencharge" ? "GC" : "REV";
+  const sessionDuration = faker.number.int({ min: 15, max: 90 });
+  const energyDelivered = faker.number.float({ min: 10, max: 80, fractionDigits: 1 });
+  const energyRate = faker.number.float({ min: 0.25, max: 0.50, fractionDigits: 2 });
+  const energyCost = energyDelivered * energyRate;
+  const sessionFee = faker.number.float({ min: 0.50, max: 2.00, fractionDigits: 2 });
+  const idleMinutes = faker.number.int({ min: 0, max: 15 });
+  const idleRate = 0.25;
+  const idleFee = idleMinutes * idleRate;
+  const subtotal = energyCost + sessionFee + idleFee;
+  const vatAmount = subtotal * 0.2;
+  const hasDiscount = faker.datatype.boolean({ probability: 0.2 });
+  const discountAmount = hasDiscount ? subtotal * 0.1 : 0;
+  const total = subtotal + vatAmount - discountAmount;
+  const batteryStart = faker.number.int({ min: 5, max: 30 });
+  const batteryEnd = faker.number.int({ min: 70, max: 95 });
+
+  const session_id = `seed-session-${String(index).padStart(3, "0")}`;
+  const consumer_id = `consumer-${faker.string.alphanumeric(8).toLowerCase()}`;
+  const card_last_four = faker.finance.creditCardNumber("####").slice(-4);
+  const receipt_number = `${prefix}-${date.getFullYear()}-${String(faker.number.int({ min: 1, max: 99999 })).padStart(5, "0")}`;
+
+  return {
+    session_id,
+    consumer_id,
+    company_ref: companyRef,
+    payment_date: formatPaymentDate(date),
     receipt: {
-      receipt_number: "EVC-2025-00001",
-      receipt_date: "24 December 2025",
-      station_name: "London Plaza - Station #12",
-      station_address: "456 Electric Avenue, London, EC1A 1BB",
-      connector_type: "CCS Type 2",
-      charger_power: "150 kW DC Fast Charger",
-      session_start_time: "14:32",
-      session_end_time: "15:17",
-      session_duration: "45",
-      energy_delivered: "42.8",
-      battery_start: "22",
-      battery_end: "87",
-      avg_charging_speed: "118",
-      vehicle_make: "Tesla",
-      vehicle_model: "Model 3 Long Range",
-      vehicle_vin: "•••••••••1234XYZ",
-      energy_rate: "£0.28",
-      energy_cost: "£11.98",
-      session_fee: "£0.80",
-      idle_minutes: "0",
-      idle_rate: "£0.32",
-      idle_fee: "£0.00",
-      subtotal: "£12.78",
+      receipt_number,
+      receipt_date: formatReceiptDate(date),
+      station_name: `${faker.location.city()} Station - Bay ${faker.string.alphanumeric(2).toUpperCase()}`,
+      station_address: `${faker.location.streetAddress()}, ${faker.location.city()}, ${faker.location.zipCode("??# #??")}`,
+      connector_type: faker.helpers.arrayElement(CONNECTOR_TYPES),
+      charger_power: faker.helpers.arrayElement(CHARGER_POWERS),
+      session_start_time: faker.date.recent().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+      session_end_time: faker.date.recent().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+      session_duration: String(sessionDuration),
+      energy_delivered: energyDelivered.toFixed(1),
+      battery_start: String(batteryStart),
+      battery_end: String(batteryEnd),
+      avg_charging_speed: String(faker.number.int({ min: 50, max: 300 })),
+      vehicle_make: faker.helpers.arrayElement(VEHICLE_MAKES),
+      vehicle_model: faker.vehicle.model(),
+      vehicle_vin: `•••••••••${faker.string.alphanumeric(7).toUpperCase()}`,
+      energy_rate: `£${energyRate.toFixed(2)}`,
+      energy_cost: `£${energyCost.toFixed(2)}`,
+      session_fee: `£${sessionFee.toFixed(2)}`,
+      idle_minutes: String(idleMinutes),
+      idle_rate: `£${idleRate.toFixed(2)}`,
+      idle_fee: `£${idleFee.toFixed(2)}`,
+      subtotal: `£${subtotal.toFixed(2)}`,
       vat_rate: "20%",
-      vat_amount: "£2.56",
-      total_amount: "£15.34",
-      card_brand: "Visa",
-      card_last_four: "4582",
+      vat_amount: `£${vatAmount.toFixed(2)}`,
+      ...(hasDiscount && {
+        discount_label: "Member Discount",
+        discount_percent: "10%",
+        discount_amount: `£${discountAmount.toFixed(2)}`,
+      }),
+      total_amount: `£${total.toFixed(2)}`,
+      card_brand: faker.helpers.arrayElement(["Visa", "Mastercard", "Amex"]),
+      card_last_four,
       payment_status: "Paid",
     },
-  },
-  {
-    session_id: "seed-session-002",
-    consumer_id: "consumer-jane-smith",
-    company_ref: "greencharge",
-    receipt: {
-      receipt_number: "GC-2025-00042",
-      receipt_date: "24 December 2025",
-      station_name: "Manchester Hub - Bay A3",
-      station_address: "78 Green Lane, Manchester, M1 2AB",
-      connector_type: "CHAdeMO",
-      charger_power: "100 kW DC Charger",
-      session_start_time: "09:15",
-      session_end_time: "09:55",
-      session_duration: "40",
-      energy_delivered: "35.2",
-      battery_start: "15",
-      battery_end: "72",
-      avg_charging_speed: "95",
-      vehicle_make: "Nissan",
-      vehicle_model: "Leaf e+",
-      vehicle_vin: "•••••••••5678ABC",
-      energy_rate: "£0.32",
-      energy_cost: "£11.26",
-      session_fee: "£1.00",
-      idle_minutes: "5",
-      idle_rate: "£0.25",
-      idle_fee: "£1.25",
-      subtotal: "£13.51",
-      vat_rate: "20%",
-      vat_amount: "£2.70",
-      discount_label: "Green Member",
-      discount_percent: "10%",
-      discount_amount: "£1.35",
-      total_amount: "£14.86",
-      card_brand: "Mastercard",
-      card_last_four: "9012",
-      payment_status: "Paid",
-    },
-  },
-  {
-    session_id: "seed-session-003",
-    consumer_id: "consumer-bob-wilson",
-    company_ref: "rapidev",
-    receipt: {
-      receipt_number: "REV-2025-00789",
-      receipt_date: "23 December 2025",
-      station_name: "Birmingham Express - Slot 5",
-      station_address: "22 Speed Road, Birmingham, B2 4CD",
-      connector_type: "CCS Type 2",
-      charger_power: "350 kW Ultra-Fast",
-      session_start_time: "18:45",
-      session_end_time: "19:05",
-      session_duration: "20",
-      energy_delivered: "55.0",
-      battery_start: "10",
-      battery_end: "85",
-      avg_charging_speed: "280",
-      vehicle_make: "Porsche",
-      vehicle_model: "Taycan 4S",
-      vehicle_vin: "•••••••••9999DEF",
-      energy_rate: "£0.45",
-      energy_cost: "£24.75",
-      session_fee: "£2.00",
-      idle_minutes: "0",
-      idle_rate: "£0.50",
-      idle_fee: "£0.00",
-      subtotal: "£26.75",
-      vat_rate: "20%",
-      vat_amount: "£5.35",
-      total_amount: "£32.10",
-      card_brand: "Amex",
-      card_last_four: "3456",
-      payment_status: "Paid",
-    },
-  },
-];
+  };
+}
 
 async function seed() {
-  console.log("🌱 Seeding S3 with sample receipts...\n");
+  const RECEIPT_COUNT = 20;
+  const CONCURRENCY = 5;
+  console.log(`🌱 Seeding S3 with ${RECEIPT_COUNT} receipts (concurrency: ${CONCURRENCY})...\n`);
 
   const generator = ReceiptPdfGenerator.create();
   const storage = StorageFactory.get();
-  const queryService = QueryServiceFactory.get();
 
-  for (const { session_id, consumer_id, company_ref, receipt } of sampleReceipts) {
-    try {
-      // Merge company info
+  const items = Array.from({ length: RECEIPT_COUNT }, (_, i) => generateReceipt(i + 1));
+
+  const { results, errors } = await PromisePool
+    .for(items)
+    .withConcurrency(CONCURRENCY)
+    .process(async ({ session_id, consumer_id, company_ref, payment_date, receipt }) => {
       const companyInfo = CompanyRegistry.get(company_ref);
-      if (!companyInfo) {
-        console.error(`❌ Unknown company_ref: ${company_ref}`);
-        continue;
-      }
-      const fullReceipt = { ...companyInfo, ...receipt } as ReceiptData;
+      if (!companyInfo) throw new Error(`Unknown company_ref: ${company_ref}`);
 
-      // Generate PDF
-      console.log(`📄 Generating PDF for ${session_id}...`);
+      const fullReceipt = { ...companyInfo, ...receipt } as ReceiptData;
       const base64Pdf = await generator.generateBase64(fullReceipt);
 
-      // Store in S3
-      console.log(`💾 Storing in S3...`);
       const result = await storage.storeReceipt(base64Pdf, {
         session_id,
         consumer_id,
         receipt_number: receipt.receipt_number,
-        payment_date: new Date().toISOString().split("T")[0],
+        payment_date,
         card_last_four: receipt.card_last_four,
         amount: receipt.total_amount,
       });
 
-      // Generate signed URL
-      const signedUrl = await queryService.getSignedPdfUrl(result.pdf_key, 3600);
+      console.log(`✅ ${session_id} (${payment_date}) -> ${result.index_key}`);
 
-      console.log(`✅ ${session_id}`);
-      console.log(`   PDF: ${result.pdf_key}`);
-      console.log(`   Metadata: ${result.metadata_key}`);
-      console.log(`   URL: ${signedUrl.substring(0, 80)}...\n`);
-    } catch (error) {
-      console.error(`❌ Failed to seed ${session_id}:`, error);
-    }
+      return {
+        session_id,
+        consumer_id,
+        card_last_four: receipt.card_last_four,
+        receipt_number: receipt.receipt_number,
+        payment_date,
+        amount: receipt.total_amount,
+      } as SeedCredentials;
+    });
+
+  if (errors.length > 0) {
+    console.error(`\n❌ ${errors.length} failed:`);
+    errors.forEach((e) => console.error(`  - ${e.message}`));
   }
 
-  console.log("🎉 Seeding complete!\n");
-  console.log("You can now test with:");
-  console.log("  - GET /receipts/seed-session-001/url");
-  console.log("  - GET /receipts/seed-session-002/url");
-  console.log("  - GET /receipts/seed-session-003/url");
+  // Write credentials to JSON file
+  const credentialsPath = path.join(__dirname, "seed-credentials.json");
+  fs.writeFileSync(credentialsPath, JSON.stringify(results, null, 2));
+  console.log(`\n📋 Credentials saved to: ${credentialsPath}`);
+
+  console.log(`\n🎉 Seeding complete! (${results.length} success, ${errors.length} failed)\n`);
+  if (results.length > 0) {
+    const sample = results[0];
+    console.log("Sample search queries:");
+    console.log(`  - Consumer ID: ${sample.consumer_id}`);
+    console.log(`  - Card Last 4: ${sample.card_last_four}`);
+    console.log(`  - Receipt #: ${sample.receipt_number}`);
+  }
 }
 
 seed().catch(console.error);

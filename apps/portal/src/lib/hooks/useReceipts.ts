@@ -8,7 +8,7 @@ export function useReceipts(searchParams: string) {
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // Check if there are any required search fields present
+ 
   const params = new URLSearchParams(searchParams);
   const hasSearchCriteria = REQUIRED_FIELDS.some((field) => {
     const value = params.get(field);
@@ -16,7 +16,7 @@ export function useReceipts(searchParams: string) {
   });
 
   useEffect(() => {
-    // Don't fetch if no search criteria provided
+   
     if (!hasSearchCriteria) {
       setData(null);
       setLoading(false);

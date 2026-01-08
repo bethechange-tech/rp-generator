@@ -1,5 +1,3 @@
-// Company registry - stores company info by ID
-// In production, this could be backed by a database or config file
 
 export interface CompanyInfo {
   company_name: string;
@@ -10,10 +8,8 @@ export interface CompanyInfo {
   support_phone?: string;
 }
 
-// Hash table for O(1) company lookup
 const companyRegistry = new Map<string, CompanyInfo>();
 
-// Pre-register default companies
 companyRegistry.set("voltcharge", {
   company_name: "VoltCharge UK",
   company_tagline: "Fast & Clean Energy",

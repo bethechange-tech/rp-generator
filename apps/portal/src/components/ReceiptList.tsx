@@ -47,8 +47,8 @@ export function ReceiptList() {
       </div>
 
       <div className="divide-y divide-gray-100">
-        {records.map((receipt) => (
-          <ReceiptRow key={receipt.session_id} receipt={receipt} />
+        {records.map((receipt, idx) => (
+          <ReceiptRow key={`${receipt.session_id}-${idx}`} receipt={receipt} />
         ))}
       </div>
 
@@ -92,7 +92,10 @@ function ReceiptRow({ receipt }: { receipt: ReceiptMetadata }) {
             <DocumentIcon className="w-5 h-5 text-primary-600" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="font-semibold text-gray-900 truncate">{receipt.receipt_number}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-semibold text-gray-900 truncate">{receipt.receipt_number}</p>
+              <AgeBadge date={receipt.payment_date} />
+            </div>
             <p className="text-xs text-gray-500 truncate">Session: {receipt.session_id}</p>
             <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
               <span>•••• {receipt.card_last_four}</span>
@@ -114,7 +117,10 @@ function ReceiptRow({ receipt }: { receipt: ReceiptMetadata }) {
             <DocumentIcon className="w-6 h-6 text-primary-600" />
           </div>
           <div>
-            <p className="font-semibold text-gray-900">{receipt.receipt_number}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-semibold text-gray-900">{receipt.receipt_number}</p>
+              <AgeBadge date={receipt.payment_date} />
+            </div>
             <p className="text-sm text-gray-500">Session: {receipt.session_id}</p>
           </div>
         </div>
@@ -141,4 +147,32 @@ function formatDate(dateString: string): string {
     month: "short",
     year: "numeric",
   });
+}
+
+function getAgeBadge(dateString: string): { label: string; className: string } | null {
+  const receiptDate = new Date(dateString);
+  const today = new Date();
+  const diffDays = Math.floor((today.getTime() - receiptDate.getTime()) / (1000 * 60 * 60 * 24));
+  
+  if (diffDays < 0) {
+    // Future date
+    return { label: "Upcoming", className: "bg-blue-100 text-blue-700" };
+  }
+  if (diffDays <= 7) {
+    return { label: "Recent", className: "bg-green-100 text-green-700" };
+  }
+  if (receiptDate.getMonth() === today.getMonth() && receiptDate.getFullYear() === today.getFullYear()) {
+    return { label: "This month", className: "bg-yellow-100 text-yellow-700" };
+  }
+  return null; // No badge for older receipts
+}
+
+function AgeBadge({ date }: { date: string }) {
+  const badge = getAgeBadge(date);
+  if (!badge) return null;
+  return (
+    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${badge.className}`}>
+      {badge.label}
+    </span>
+  );
 }

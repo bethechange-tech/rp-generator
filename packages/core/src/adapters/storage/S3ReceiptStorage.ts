@@ -26,7 +26,6 @@ export class S3ReceiptStorage implements IReceiptStorage {
     this.rollbackManager = new RollbackManager({
       client: this.client,
       bucket: this.bucket,
-      indexManager: this.indexManager,
     });
   }
 
@@ -34,7 +33,7 @@ export class S3ReceiptStorage implements IReceiptStorage {
    * Store receipt with full indexing (transactional):
    * 1. Store PDF at receipts/pdfs/{session_id}.pdf
    * 2. Store metadata at receipts/metadata/{session_id}.json
-   * 3. Append to daily index at receipts/index/dt={date}/index.ndjson
+   * 3. Write part file at receipts/index/dt={date}/part-{uuid}.ndjson.gz
    */
   async storeReceipt(
     base64Pdf: string,
@@ -45,10 +44,9 @@ export class S3ReceiptStorage implements IReceiptStorage {
 
     const pdfKey = `pdfs/${sessionId}.pdf`;
     const metadataKey = `metadata/${sessionId}.json`;
-    const indexKey = this.indexManager.buildKey(date);
+    const indexKey = this.indexManager.buildKey(date, metadata.card_last_four);
 
     const uploadedKeys: string[] = [];
-    let previousIndexContent: string | null = null;
 
     try {
       await this.uploadPdf(base64Pdf, pdfKey);
@@ -67,12 +65,14 @@ export class S3ReceiptStorage implements IReceiptStorage {
       await this.uploadMetadata(fullMetadata, metadataKey);
       uploadedKeys.push(metadataKey);
 
-      previousIndexContent = await this.indexManager.getContent(indexKey);
-      await this.indexManager.append(fullMetadata, indexKey, previousIndexContent);      console.log(`Receipt stored: ${sessionId}`);
+      await this.indexManager.writePart(fullMetadata, indexKey);
+      uploadedKeys.push(indexKey);
+
+      console.log(`Receipt stored: ${sessionId}`);
       return { pdf_key: pdfKey, metadata_key: metadataKey, index_key: indexKey };
     } catch (error) {
       console.error(`Transaction failed, rolling back...`);
-      await this.rollbackManager.execute(uploadedKeys, indexKey, previousIndexContent);
+      await this.rollbackManager.execute(uploadedKeys);
       throw error;
     }
   }

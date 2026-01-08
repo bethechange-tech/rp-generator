@@ -22,7 +22,7 @@ export class ResponseBuilder {
   ): DetailedCostResponse {
     const formatted = OcpiCostCalculator.formatBreakdown(breakdown);
 
-    // Extract detailed breakdown information
+   
     const sessionDetails = BreakdownExtractor.extractSessionDetails(sessionPayload);
     const energyDetails = BreakdownExtractor.extractEnergyDetails(sessionPayload, tariffPayload);
     const parkingDetails = BreakdownExtractor.extractParkingDetails(sessionPayload, tariffPayload);

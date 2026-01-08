@@ -1,32 +1,23 @@
 import { z } from "zod";
 
-// ============================================================================
-// OCPI 2.2.1 Compliant Schemas
-// Supports actual OCPI payloads with flexible validation
-// ============================================================================
 
-// Flexible datetime - accepts ISO 8601 with or without timezone
 const DateTimeSchema = z.string().refine(
   (val) => !isNaN(Date.parse(val)),
   { message: "Must be a valid datetime string" }
 );
 
-// Flexible time format - HH:MM or HH:MM:SS
 const TimeSchema = z.string().regex(
   /^\d{2}:\d{2}(:\d{2})?$/,
   "Must be in HH:MM or HH:MM:SS format"
 );
 
-// ============================================================================
-// Enums - OCPI 2.2.1 Specification
-// ============================================================================
 
 export const TariffDimensionTypeSchema = z.enum([
   "ENERGY",
   "FLAT", 
   "PARKING_TIME",
   "TIME",
-  "RESERVATION", // OCPI 2.2.1 addition
+  "RESERVATION",
 ]);
 
 export const DayOfWeekSchema = z.enum([
@@ -101,7 +92,7 @@ export const ConnectorTypeSchema = z.enum([
   "PANTOGRAPH_TOP_DOWN",
   "TESLA_R",
   "TESLA_S",
-]).or(z.string()); // Allow unknown connector types
+]).or(z.string());
 
 export const PowerTypeSchema = z.enum([
   "AC_1_PHASE",
@@ -124,9 +115,6 @@ export const ReservationRestrictionTypeSchema = z.enum([
   "RESERVATION_EXPIRES",
 ]).or(z.string());
 
-// ============================================================================
-// OCPI Price/Tariff Components
-// ============================================================================
 
 export const TariffRestrictionSchema = z.object({
   start_time: TimeSchema.optional(),
@@ -143,7 +131,7 @@ export const TariffRestrictionSchema = z.object({
   max_duration: z.number().optional(),
   day_of_week: z.array(DayOfWeekSchema).optional(),
   reservation: ReservationRestrictionTypeSchema.optional(),
-}).passthrough(); // Allow additional fields
+}).passthrough();
 
 export const PriceComponentSchema = z.object({
   type: TariffDimensionTypeSchema,
@@ -181,7 +169,6 @@ export const EnergyMixSchema = z.object({
   energy_product_name: z.string().optional(),
 }).passthrough();
 
-// Full OCPI Tariff schema
 export const TariffSchema = z.object({
   country_code: z.string().optional(),
   party_id: z.string().optional(),
@@ -199,9 +186,6 @@ export const TariffSchema = z.object({
   last_updated: DateTimeSchema.optional(),
 }).passthrough();
 
-// ============================================================================
-// Charging Period (used in both Session and CDR)
-// ============================================================================
 
 export const ChargingPeriodDimensionSchema = z.object({
   type: TariffDimensionTypeSchema,
@@ -214,9 +198,6 @@ export const ChargingPeriodSchema = z.object({
   tariff_id: z.string().optional(),
 }).passthrough();
 
-// ============================================================================
-// OCPI Session (Charging Session)
-// ============================================================================
 
 export const GeoLocationSchema = z.object({
   latitude: z.string(),
@@ -286,7 +267,6 @@ export const CdrLocationSchema = z.object({
   connector_power_type: PowerTypeSchema.optional(),
 }).passthrough();
 
-// Full OCPI Session schema
 export const OcpiSessionSchema = z.object({
   country_code: z.string().optional(),
   party_id: z.string().optional(),
@@ -311,9 +291,6 @@ export const OcpiSessionSchema = z.object({
   last_updated: DateTimeSchema.optional(),
 }).passthrough();
 
-// ============================================================================
-// OCPI CDR (Charge Detail Record)
-// ============================================================================
 
 export const SignedDataSchema = z.object({
   encoding_method: z.string(),
@@ -327,7 +304,6 @@ export const SignedDataSchema = z.object({
   url: z.string().optional(),
 }).passthrough();
 
-// Full OCPI CDR schema
 export const CdrSchema = z.object({
   country_code: z.string().optional(),
   party_id: z.string().optional(),
@@ -339,7 +315,7 @@ export const CdrSchema = z.object({
   auth_method: AuthMethodSchema.or(z.string()).optional(),
   authorization_reference: z.string().optional(),
   cdr_location: CdrLocationSchema.optional(),
-  location: CdrLocationSchema.optional(), // Alternative field name
+  location: CdrLocationSchema.optional(),
   meter_id: z.string().optional(),
   currency: z.string(),
   tariffs: z.array(TariffSchema).optional(),
@@ -362,9 +338,6 @@ export const CdrSchema = z.object({
   last_updated: DateTimeSchema,
 }).passthrough();
 
-// ============================================================================
-// Charge Record (simplified interface for calculations)
-// ============================================================================
 
 export const ChargeRecordSchema = z.object({
   start_date_time: DateTimeSchema,
@@ -377,9 +350,6 @@ export const ChargeRecordSchema = z.object({
   total_parking_time: z.number().optional(),
 }).passthrough();
 
-// ============================================================================
-// Request Schemas - Flexible input acceptance
-// ============================================================================
 
 export const CalculateCostRequestSchema = z.discriminatedUnion("type", [
   z.object({
@@ -399,9 +369,6 @@ export const CalculateCostRequestSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-// ============================================================================
-// Type Exports
-// ============================================================================
 
 export type TariffDimensionType = z.infer<typeof TariffDimensionTypeSchema>;
 export type DayOfWeek = z.infer<typeof DayOfWeekSchema>;
@@ -418,7 +385,6 @@ export type Cdr = z.infer<typeof CdrSchema>;
 export type ChargeRecord = z.infer<typeof ChargeRecordSchema>;
 export type CalculateCostRequest = z.infer<typeof CalculateCostRequestSchema>;
 
-// Response type (serialized from Money objects)
 export interface SessionDetails {
   startTime: string;
   endTime: string;

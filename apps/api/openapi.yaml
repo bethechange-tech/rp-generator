@@ -183,14 +183,23 @@ components:
           example: "consumer-john-doe"
         company_ref:
           type: string
-          description: Reference to a pre-registered company (e.g., 'voltcharge', 'greencharge', 'rapidev'). When provided, company info is auto-populated.
+          description: |
+            Reference to a pre-registered company. When provided, company info (company_name, company_tagline, company_logo_svg, company_website, support_email, support_phone) is auto-populated from the server-side registry.
+            Available values: 'voltcharge', 'greencharge', 'rapidev'
+          enum:
+            - voltcharge
+            - greencharge
+            - rapidev
           example: "voltcharge"
         receipt:
           $ref: "#/components/schemas/ReceiptData"
 
     ReceiptData:
       type: object
-      description: Receipt data. If company_ref is provided in the request, company fields (company_name, company_tagline, etc.) are optional.
+      description: |
+        Receipt data for PDF generation.
+        Company info (company_name, company_tagline, company_logo_svg, company_website, support_email, support_phone) 
+        is provided via the `company_ref` field in the request, which references a pre-registered company.
       required:
         - receipt_number
         - receipt_date
@@ -222,25 +231,6 @@ components:
         - card_last_four
         - payment_status
       properties:
-        company_name:
-          type: string
-          example: "VoltCharge UK"
-        company_tagline:
-          type: string
-          example: "Fast & Clean Energy"
-        company_logo_svg:
-          type: string
-          description: SVG markup or base64 data URI for company logo
-          example: "<svg>...</svg>"
-        company_website:
-          type: string
-          example: "www.voltcharge.co.uk"
-        support_email:
-          type: string
-          example: "support@voltcharge.co.uk"
-        support_phone:
-          type: string
-          example: "0800-VOLTCHG"
         receipt_number:
           type: string
           example: "EVC-2025-41823"

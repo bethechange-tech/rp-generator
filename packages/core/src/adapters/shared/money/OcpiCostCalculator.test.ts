@@ -440,7 +440,7 @@ describe("OcpiCostCalculator", () => {
               { type: "PARKING_TIME", price: 0.50, step_size: 1 },
             ],
             restrictions: {
-              min_duration: 600, // 10 minute grace period (in seconds)
+              min_duration: 600,
             },
           },
         ],
@@ -451,7 +451,7 @@ describe("OcpiCostCalculator", () => {
           start_date_time: "2025-12-26T10:00:00Z",
           end_date_time: "2025-12-26T10:30:00Z",
           kwh: 40,
-          total_parking_time: 8, // 8 minutes parking (within grace)
+          total_parking_time: 8,
           charging_periods: [],
         };
 
@@ -467,14 +467,14 @@ describe("OcpiCostCalculator", () => {
           start_date_time: "2025-12-26T10:00:00Z",
           end_date_time: "2025-12-26T11:00:00Z",
           kwh: 40,
-          total_parking_time: 25, // 25 mins parking, minus 10 min grace = 15 mins billable
+          total_parking_time: 25,
           charging_periods: [],
         };
 
         const breakdown = OcpiCostCalculator.calculate(session, tariffWithGracePeriod);
 
         expect(breakdown.energy.toPounds()).toBe(12);
-        expect(breakdown.parking.toPounds()).toBe(7.50); // 15 mins x £0.50
+        expect(breakdown.parking.toPounds()).toBe(7.50);
         expect(breakdown.total.toPounds()).toBe(19.50);
       });
     });
@@ -493,7 +493,7 @@ describe("OcpiCostCalculator", () => {
               { type: "PARKING_TIME", price: 0.25, step_size: 1 },
             ],
             restrictions: {
-              max_duration: 1800, // max 30 mins chargeable parking (in seconds)
+              max_duration: 1800,
             },
           },
         ],
@@ -504,14 +504,14 @@ describe("OcpiCostCalculator", () => {
           start_date_time: "2025-12-26T10:00:00Z",
           end_date_time: "2025-12-26T12:00:00Z",
           kwh: 50,
-          total_parking_time: 60, // 60 mins parking, capped at 30 mins
+          total_parking_time: 60,
           charging_periods: [],
         };
 
         const breakdown = OcpiCostCalculator.calculate(session, tariffWithMaxDuration);
 
         expect(breakdown.energy.toPounds()).toBe(15);
-        expect(breakdown.parking.toPounds()).toBe(7.50); // 30 mins x £0.25 (capped)
+        expect(breakdown.parking.toPounds()).toBe(7.50);
         expect(breakdown.total.toPounds()).toBe(22.50);
       });
     });
@@ -538,7 +538,7 @@ describe("OcpiCostCalculator", () => {
 
       it("applies weekend surcharge on Saturday", () => {
         const session: OcpiSession = {
-          start_date_time: "2025-12-27T10:00:00Z", // Saturday
+          start_date_time: "2025-12-27T10:00:00Z",
           end_date_time: "2025-12-27T10:30:00Z",
           kwh: 40,
           charging_periods: [],
@@ -553,7 +553,7 @@ describe("OcpiCostCalculator", () => {
 
       it("skips weekend surcharge on weekday", () => {
         const session: OcpiSession = {
-          start_date_time: "2025-12-26T10:00:00Z", // Friday
+          start_date_time: "2025-12-26T10:00:00Z",
           end_date_time: "2025-12-26T10:30:00Z",
           kwh: 40,
           charging_periods: [],
@@ -590,7 +590,7 @@ describe("OcpiCostCalculator", () => {
 
       it("applies peak surcharge during rush hour", () => {
         const session: OcpiSession = {
-          start_date_time: "2025-12-26T18:00:00Z", // 6pm UTC
+          start_date_time: "2025-12-26T18:00:00Z",
           end_date_time: "2025-12-26T18:30:00Z",
           kwh: 30,
           charging_periods: [],
@@ -598,12 +598,12 @@ describe("OcpiCostCalculator", () => {
 
         const breakdown = OcpiCostCalculator.calculate(session, peakTariff);
 
-        expect(breakdown.energy.toPounds()).toBe(10.50); // £7.50 base + £3 peak surcharge
+        expect(breakdown.energy.toPounds()).toBe(10.50);
       });
 
       it("skips peak surcharge outside rush hour", () => {
         const session: OcpiSession = {
-          start_date_time: "2025-12-26T10:00:00Z", // 10am UTC
+          start_date_time: "2025-12-26T10:00:00Z",
           end_date_time: "2025-12-26T10:30:00Z",
           kwh: 30,
           charging_periods: [],
@@ -611,7 +611,7 @@ describe("OcpiCostCalculator", () => {
 
         const breakdown = OcpiCostCalculator.calculate(session, peakTariff);
 
-        expect(breakdown.energy.toPounds()).toBe(7.50); // base rate only
+        expect(breakdown.energy.toPounds()).toBe(7.50);
       });
     });
 
@@ -629,7 +629,7 @@ describe("OcpiCostCalculator", () => {
               { type: "FLAT", price: -5.00, step_size: 0 },
             ],
             restrictions: {
-              min_kwh: 50, // £5 discount for charging over 50 kWh
+              min_kwh: 50,
             },
           },
         ],
@@ -645,8 +645,8 @@ describe("OcpiCostCalculator", () => {
 
         const breakdown = OcpiCostCalculator.calculate(session, bulkDiscountTariff);
 
-        expect(breakdown.energy.toPounds()).toBe(21); // 60 x £0.35
-        expect(breakdown.flat.toPounds()).toBe(-5); // discount
+        expect(breakdown.energy.toPounds()).toBe(21);
+        expect(breakdown.flat.toPounds()).toBe(-5);
         expect(breakdown.total.toPounds()).toBe(16);
       });
 
@@ -680,8 +680,8 @@ describe("OcpiCostCalculator", () => {
               { type: "PARKING_TIME", price: 1.00, step_size: 1 },
             ],
             restrictions: {
-              min_duration: 300, // 5 min grace
-              max_duration: 1800, // max 30 mins chargeable
+              min_duration: 300,
+              max_duration: 1800,
             },
           },
         ],
@@ -692,14 +692,14 @@ describe("OcpiCostCalculator", () => {
           start_date_time: "2025-12-26T10:00:00Z",
           end_date_time: "2025-12-26T11:30:00Z",
           kwh: 40,
-          total_parking_time: 50, // 50 mins - 5 min grace = 45 mins, capped at 30 mins
+          total_parking_time: 50,
           charging_periods: [],
         };
 
         const breakdown = OcpiCostCalculator.calculate(session, restrictedParkingTariff);
 
         expect(breakdown.energy.toPounds()).toBe(12);
-        expect(breakdown.parking.toPounds()).toBe(30); // 30 mins x £1 (capped after grace)
+        expect(breakdown.parking.toPounds()).toBe(30);
         expect(breakdown.total.toPounds()).toBe(42);
       });
     });
@@ -720,7 +720,7 @@ describe("OcpiCostCalculator", () => {
               { type: "PARKING_TIME", price: 0.10, step_size: 1 },
             ],
             restrictions: {
-              min_duration: 2700, // 45 min grace period while shopping
+              min_duration: 2700,
             },
           },
         ],
@@ -747,14 +747,14 @@ describe("OcpiCostCalculator", () => {
           start_date_time: "2025-12-26T14:00:00Z",
           end_date_time: "2025-12-26T15:30:00Z",
           kwh: 12,
-          total_parking_time: 75, // 75 mins - 45 min grace = 30 mins billable
+          total_parking_time: 75,
           charging_periods: [],
         };
 
         const breakdown = OcpiCostCalculator.calculate(session, tescoTariff);
 
         expect(breakdown.energy.toPounds()).toBe(0);
-        expect(breakdown.parking.toPounds()).toBe(3); // 30 mins x 10p
+        expect(breakdown.parking.toPounds()).toBe(3);
         expect(breakdown.total.toPounds()).toBe(3);
       });
     });
@@ -774,8 +774,8 @@ describe("OcpiCostCalculator", () => {
               { type: "PARKING_TIME", price: 0.50, step_size: 1, vat: 20 },
             ],
             restrictions: {
-              min_duration: 600, // 10 min grace to unplug
-              max_duration: 3600, // max 1 hour charge (£30 cap)
+              min_duration: 600,
+              max_duration: 3600,
             },
           },
         ],
@@ -786,7 +786,7 @@ describe("OcpiCostCalculator", () => {
           start_date_time: "2025-12-26T11:00:00Z",
           end_date_time: "2025-12-26T11:35:00Z",
           kwh: 50,
-          total_parking_time: 5, // left promptly
+          total_parking_time: 5,
           charging_periods: [],
         };
 
@@ -794,9 +794,9 @@ describe("OcpiCostCalculator", () => {
 
         expect(breakdown.flat.toPounds()).toBe(0.99);
         expect(breakdown.energy.toPounds()).toBe(39.50);
-        expect(breakdown.parking.toPounds()).toBe(0); // within grace
+        expect(breakdown.parking.toPounds()).toBe(0);
         expect(breakdown.subtotal.toPounds()).toBe(40.49);
-        expect(breakdown.vat.toPounds()).toBe(8.10); // 20% of 40.49 ≈ 8.098
+        expect(breakdown.vat.toPounds()).toBe(8.10);
       });
 
       it("adds idle fee when driver has a long lunch", () => {
@@ -804,14 +804,14 @@ describe("OcpiCostCalculator", () => {
           start_date_time: "2025-12-26T12:00:00Z",
           end_date_time: "2025-12-26T13:15:00Z",
           kwh: 60,
-          total_parking_time: 45, // 45 - 10 grace = 35 mins billable
+          total_parking_time: 45,
           charging_periods: [],
         };
 
         const breakdown = OcpiCostCalculator.calculate(session, motorwayTariff);
 
         expect(breakdown.energy.toPounds()).toBe(47.40);
-        expect(breakdown.parking.toPounds()).toBe(17.50); // 35 mins x £0.50
+        expect(breakdown.parking.toPounds()).toBe(17.50);
       });
 
       it("caps idle fee at maximum duration for abandoned vehicles", () => {
@@ -819,13 +819,13 @@ describe("OcpiCostCalculator", () => {
           start_date_time: "2025-12-26T10:00:00Z",
           end_date_time: "2025-12-26T14:00:00Z",
           kwh: 80,
-          total_parking_time: 180, // 3 hours idle, capped at 60 mins after grace
+          total_parking_time: 180,
           charging_periods: [],
         };
 
         const breakdown = OcpiCostCalculator.calculate(session, motorwayTariff);
 
-        expect(breakdown.parking.toPounds()).toBe(30); // capped at 60 mins x £0.50
+        expect(breakdown.parking.toPounds()).toBe(30);
       });
     });
 
@@ -855,7 +855,7 @@ describe("OcpiCostCalculator", () => {
             ],
             restrictions: {
               day_of_week: ["SATURDAY", "SUNDAY"],
-              min_duration: 1800, // 30 min grace on weekends
+              min_duration: 1800,
             },
           },
         ],
@@ -863,7 +863,7 @@ describe("OcpiCostCalculator", () => {
 
       it("provides free charging during work hours", () => {
         const session: OcpiSession = {
-          start_date_time: "2025-12-29T09:00:00Z", // Monday
+          start_date_time: "2025-12-29T09:00:00Z",
           end_date_time: "2025-12-29T17:00:00Z",
           kwh: 25,
           total_parking_time: 0,
@@ -879,10 +879,10 @@ describe("OcpiCostCalculator", () => {
 
       it("charges for weekend use with idle fees", () => {
         const session: OcpiSession = {
-          start_date_time: "2025-12-27T10:00:00Z", // Saturday
+          start_date_time: "2025-12-27T10:00:00Z",
           end_date_time: "2025-12-27T12:00:00Z",
           kwh: 30,
-          total_parking_time: 60, // 60 - 30 grace = 30 mins billable
+          total_parking_time: 60,
           charging_periods: [],
         };
 
@@ -995,9 +995,9 @@ describe("OcpiCostCalculator", () => {
 
         const breakdown = OcpiCostCalculator.calculate(session, councilTariff);
 
-        expect(breakdown.energy.toPounds()).toBe(10); // (15 + 10) x £0.40
-        expect(breakdown.time.toPounds()).toBe(5.25); // (60 + 45) x £0.05
-        expect(breakdown.parking.toPounds()).toBe(45); // (120 + 180) x £0.15
+        expect(breakdown.energy.toPounds()).toBe(10);
+        expect(breakdown.time.toPounds()).toBe(5.25);
+        expect(breakdown.parking.toPounds()).toBe(45);
         expect(breakdown.subtotal.toPounds()).toBe(60.25);
       });
 
@@ -1045,9 +1045,9 @@ describe("OcpiCostCalculator", () => {
 
         const breakdown = OcpiCostCalculator.calculate(session, councilTariff);
 
-        expect(breakdown.energy.toPounds()).toBe(16); // (20 + 15 + 5) x £0.40
-        expect(breakdown.time.toPounds()).toBe(4.50); // (30 + 45 + 15) x £0.05
-        expect(breakdown.parking.toPounds()).toBe(18); // (30 + 90) x £0.15
+        expect(breakdown.energy.toPounds()).toBe(16);
+        expect(breakdown.time.toPounds()).toBe(4.50);
+        expect(breakdown.parking.toPounds()).toBe(18);
       });
     });
 
@@ -1073,8 +1073,8 @@ describe("OcpiCostCalculator", () => {
               { type: "PARKING_TIME", price: 2.00, step_size: 1 },
             ],
             restrictions: {
-              min_duration: 3600, // 1 hour grace for fleet turnaround
-              max_duration: 7200, // max 2 hours billable
+              min_duration: 3600,
+              max_duration: 7200,
             },
           },
         ],
@@ -1091,8 +1091,8 @@ describe("OcpiCostCalculator", () => {
 
         const breakdown = OcpiCostCalculator.calculate(session, depotTariff);
 
-        expect(breakdown.energy.toPounds()).toBe(42); // 150 x £0.28
-        expect(breakdown.flat.toPounds()).toBe(-10); // bulk discount
+        expect(breakdown.energy.toPounds()).toBe(42);
+        expect(breakdown.flat.toPounds()).toBe(-10);
         expect(breakdown.total.toPounds()).toBe(32);
       });
 
@@ -1101,15 +1101,15 @@ describe("OcpiCostCalculator", () => {
           start_date_time: "2025-12-26T06:00:00Z",
           end_date_time: "2025-12-26T10:00:00Z",
           kwh: 80,
-          total_parking_time: 180, // 3 hours - 1 hour grace = 2 hours billable (at cap)
+          total_parking_time: 180,
           charging_periods: [],
         };
 
         const breakdown = OcpiCostCalculator.calculate(session, depotTariff);
 
         expect(breakdown.energy.toPounds()).toBe(22.40);
-        expect(breakdown.parking.toPounds()).toBe(240); // 120 mins x £2 (capped)
-        expect(breakdown.flat.toPounds()).toBe(0); // no discount under 100 kWh
+        expect(breakdown.parking.toPounds()).toBe(240);
+        expect(breakdown.flat.toPounds()).toBe(0);
       });
     });
   });
@@ -1129,7 +1129,7 @@ describe("OcpiCostCalculator", () => {
               { type: "PARKING_TIME", price: 0.10, step_size: 1 },
             ],
             restrictions: {
-              min_duration: 2700, // 45 min grace
+              min_duration: 2700,
             },
           },
         ],
@@ -1160,7 +1160,7 @@ describe("OcpiCostCalculator", () => {
         const breakdown = OcpiCostCalculator.calculate(session, tescoTariff);
 
         expect(breakdown.energy.toPounds()).toBe(0);
-        expect(breakdown.parking.toPounds()).toBe(0); // 15 mins within 45 min grace
+        expect(breakdown.parking.toPounds()).toBe(0);
       });
 
       it("charges overstay from charging_periods data", () => {
@@ -1188,7 +1188,7 @@ describe("OcpiCostCalculator", () => {
         const breakdown = OcpiCostCalculator.calculate(session, tescoTariff);
 
         expect(breakdown.energy.toPounds()).toBe(0);
-        expect(breakdown.parking.toPounds()).toBe(1.50); // 60 - 45 grace = 15 mins x 10p
+        expect(breakdown.parking.toPounds()).toBe(1.50);
       });
     });
 
@@ -1207,8 +1207,8 @@ describe("OcpiCostCalculator", () => {
               { type: "PARKING_TIME", price: 0.50, step_size: 1, vat: 20 },
             ],
             restrictions: {
-              min_duration: 600, // 10 min grace
-              max_duration: 3600, // 60 min cap
+              min_duration: 600,
+              max_duration: 3600,
             },
           },
         ],
@@ -1240,7 +1240,7 @@ describe("OcpiCostCalculator", () => {
 
         expect(breakdown.flat.toPounds()).toBe(0.99);
         expect(breakdown.energy.toPounds()).toBe(39.50);
-        expect(breakdown.parking.toPounds()).toBe(0); // 5 mins within 10 min grace
+        expect(breakdown.parking.toPounds()).toBe(0);
       });
 
       it("applies grace and cap from multiple parking periods", () => {
@@ -1280,9 +1280,9 @@ describe("OcpiCostCalculator", () => {
 
         const breakdown = OcpiCostCalculator.calculate(session, motorwayTariff);
 
-        expect(breakdown.energy.toPounds()).toBe(47.40); // 60 kWh x £0.79
-        // Total parking: 35 + 75 = 110 mins, minus 10 grace = 100 mins, capped at 60
-        expect(breakdown.parking.toPounds()).toBe(30); // 60 mins x £0.50
+        expect(breakdown.energy.toPounds()).toBe(47.40);
+       
+        expect(breakdown.parking.toPounds()).toBe(30);
       });
     });
 
@@ -1312,7 +1312,7 @@ describe("OcpiCostCalculator", () => {
             ],
             restrictions: {
               day_of_week: ["SATURDAY", "SUNDAY"],
-              min_duration: 1800, // 30 min grace weekends
+              min_duration: 1800,
             },
           },
         ],
@@ -1320,7 +1320,7 @@ describe("OcpiCostCalculator", () => {
 
       it("tracks multiple idle periods on weekend from charging_periods", () => {
         const session: OcpiSession = {
-          start_date_time: "2025-12-27T09:00:00Z", // Saturday
+          start_date_time: "2025-12-27T09:00:00Z",
           end_date_time: "2025-12-27T14:00:00Z",
           kwh: 0,
           charging_periods: [
@@ -1355,9 +1355,9 @@ describe("OcpiCostCalculator", () => {
 
         const breakdown = OcpiCostCalculator.calculate(session, officeTariff);
 
-        expect(breakdown.energy.toPounds()).toBe(10.50); // 35 kWh x £0.30
-        // Total parking: 60 + 135 = 195 mins, minus 30 grace = 165 mins
-        expect(breakdown.parking.toPounds()).toBe(33); // 165 mins x £0.20
+        expect(breakdown.energy.toPounds()).toBe(10.50);
+       
+        expect(breakdown.parking.toPounds()).toBe(33);
       });
     });
 
@@ -1376,7 +1376,7 @@ describe("OcpiCostCalculator", () => {
               { type: "PARKING_TIME", price: 0.25, step_size: 1, vat: 20 },
             ],
             restrictions: {
-              min_duration: 900, // 15 min grace
+              min_duration: 900,
             },
           },
         ],
@@ -1432,10 +1432,10 @@ describe("OcpiCostCalculator", () => {
 
         const breakdown = OcpiCostCalculator.calculate(session, hubTariff);
 
-        expect(breakdown.energy.toPounds()).toBe(31.50); // 70 kWh x £0.45
-        expect(breakdown.time.toPounds()).toBe(4.80); // 60 mins x £0.08
-        // Total parking: 10 + 65 + 45 = 120 mins, minus 15 grace = 105 mins
-        expect(breakdown.parking.toPounds()).toBe(26.25); // 105 mins x £0.25
+        expect(breakdown.energy.toPounds()).toBe(31.50);
+        expect(breakdown.time.toPounds()).toBe(4.80);
+       
+        expect(breakdown.parking.toPounds()).toBe(26.25);
       });
 
       it("handles interleaved short parking periods all within grace", () => {
@@ -1482,9 +1482,9 @@ describe("OcpiCostCalculator", () => {
 
         const breakdown = OcpiCostCalculator.calculate(session, hubTariff);
 
-        expect(breakdown.energy.toPounds()).toBe(18); // 40 kWh x £0.45
-        expect(breakdown.time.toPounds()).toBe(2.80); // 35 mins x £0.08
-        // Total parking: 3 + 7 = 10 mins, within 15 min grace
+        expect(breakdown.energy.toPounds()).toBe(18);
+        expect(breakdown.time.toPounds()).toBe(2.80);
+       
         expect(breakdown.parking.toPounds()).toBe(0);
       });
     });
@@ -1511,8 +1511,8 @@ describe("OcpiCostCalculator", () => {
               { type: "PARKING_TIME", price: 3.00, step_size: 1 },
             ],
             restrictions: {
-              min_duration: 7200, // 2 hour grace for fleet ops
-              max_duration: 10800, // 3 hour max billable
+              min_duration: 7200,
+              max_duration: 10800,
             },
           },
         ],
@@ -1555,10 +1555,10 @@ describe("OcpiCostCalculator", () => {
 
         const breakdown = OcpiCostCalculator.calculate(session, fleetTariff);
 
-        expect(breakdown.energy.toPounds()).toBe(39.60); // 180 kWh x £0.22
-        expect(breakdown.flat.toPounds()).toBe(-15); // bulk discount (180 > 150)
-        // Total parking: 120 + 180 = 300 mins, minus 120 grace = 180 mins, capped at 180
-        expect(breakdown.parking.toPounds()).toBe(540); // 180 mins x £3.00
+        expect(breakdown.energy.toPounds()).toBe(39.60);
+        expect(breakdown.flat.toPounds()).toBe(-15);
+       
+        expect(breakdown.parking.toPounds()).toBe(540);
         expect(breakdown.total.toPounds()).toBe(564.60);
       });
 
@@ -1612,10 +1612,10 @@ describe("OcpiCostCalculator", () => {
 
         const breakdown = OcpiCostCalculator.calculate(session, fleetTariff);
 
-        expect(breakdown.energy.toPounds()).toBe(33); // 150 kWh x £0.22
-        expect(breakdown.flat.toPounds()).toBe(-15); // bulk discount (150 = 150)
-        // Total parking: 30 + 45 + 180 = 255 mins, minus 120 grace = 135 mins
-        expect(breakdown.parking.toPounds()).toBe(405); // 135 mins x £3.00
+        expect(breakdown.energy.toPounds()).toBe(33);
+        expect(breakdown.flat.toPounds()).toBe(-15);
+       
+        expect(breakdown.parking.toPounds()).toBe(405);
       });
     });
   });
@@ -1859,7 +1859,7 @@ describe("OcpiCostCalculator", () => {
                     { type: "PARKING_TIME", price: 0.50, step_size: 1 },
                   ],
                   restrictions: {
-                    min_duration: 600, // 10 min grace
+                    min_duration: 600,
                   },
                 },
               ],
@@ -1871,7 +1871,7 @@ describe("OcpiCostCalculator", () => {
         const breakdown = OcpiCostCalculator.calculateFromCdr(cdr);
 
         expect(breakdown.energy.toPounds()).toBe(15);
-        // 25 mins parking - 10 min grace = 15 mins billable x £0.50
+       
         expect(breakdown.parking.toPounds()).toBe(7.50);
         expect(breakdown.total.toPounds()).toBe(22.50);
       });
@@ -1879,7 +1879,7 @@ describe("OcpiCostCalculator", () => {
       it("applies day-of-week restrictions from CDR tariff", () => {
         const cdr: Cdr = {
           id: "CDR-007",
-          start_date_time: "2025-12-27T10:00:00Z", // Saturday
+          start_date_time: "2025-12-27T10:00:00Z",
           end_date_time: "2025-12-27T10:30:00Z",
           currency: "GBP",
           total_cost: 12.00,
@@ -1919,7 +1919,7 @@ describe("OcpiCostCalculator", () => {
         const breakdown = OcpiCostCalculator.calculateFromCdr(cdr);
 
         expect(breakdown.energy.toPounds()).toBe(9);
-        expect(breakdown.flat.toPounds()).toBe(3); // weekend surcharge
+        expect(breakdown.flat.toPounds()).toBe(3);
         expect(breakdown.total.toPounds()).toBe(12);
       });
     });
@@ -1977,7 +1977,7 @@ describe("OcpiCostCalculator", () => {
                     { type: "PARKING_TIME", price: 0.50, step_size: 1, vat: 20 },
                   ],
                   restrictions: {
-                    min_duration: 600, // 10 min grace
+                    min_duration: 600,
                   },
                 },
               ],
@@ -1990,7 +1990,7 @@ describe("OcpiCostCalculator", () => {
 
         expect(breakdown.flat.toPounds()).toBe(0.99);
         expect(breakdown.energy.toPounds()).toBe(39.50);
-        expect(breakdown.parking.toPounds()).toBe(0); // within grace
+        expect(breakdown.parking.toPounds()).toBe(0);
         expect(breakdown.subtotal.toPounds()).toBe(40.49);
       });
 
@@ -2040,7 +2040,7 @@ describe("OcpiCostCalculator", () => {
                     { type: "PARKING_TIME", price: 0.10, step_size: 1 },
                   ],
                   restrictions: {
-                    min_duration: 2700, // 45 min grace
+                    min_duration: 2700,
                   },
                 },
               ],
@@ -2052,7 +2052,7 @@ describe("OcpiCostCalculator", () => {
         const breakdown = OcpiCostCalculator.calculateFromCdr(cdr);
 
         expect(breakdown.energy.toPounds()).toBe(0);
-        // 75 mins - 45 min grace = 30 mins x £0.10
+       
         expect(breakdown.parking.toPounds()).toBe(3);
         expect(breakdown.total.toPounds()).toBe(3);
       });
@@ -2102,7 +2102,7 @@ describe("OcpiCostCalculator", () => {
                     { type: "FLAT", price: -10.00, step_size: 0 },
                   ],
                   restrictions: {
-                    min_kwh: 100, // bulk discount
+                    min_kwh: 100,
                   },
                 },
               ],
@@ -2113,8 +2113,8 @@ describe("OcpiCostCalculator", () => {
 
         const breakdown = OcpiCostCalculator.calculateFromCdr(cdr);
 
-        expect(breakdown.energy.toPounds()).toBe(42); // 150 x £0.28
-        expect(breakdown.flat.toPounds()).toBe(-10); // bulk discount
+        expect(breakdown.energy.toPounds()).toBe(42);
+        expect(breakdown.flat.toPounds()).toBe(-10);
         expect(breakdown.total.toPounds()).toBe(32);
       });
     });

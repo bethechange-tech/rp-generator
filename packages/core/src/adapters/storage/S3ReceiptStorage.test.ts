@@ -11,7 +11,7 @@ describe("Receipt Storage System", () => {
   let queryService: ReceiptQueryService;
 
   beforeAll(async () => {
-    // Start MinIO container
+   
     container = await new GenericContainer("minio/minio:latest")
       .withExposedPorts(9000)
       .withEnvironment({
@@ -33,7 +33,7 @@ describe("Receipt Storage System", () => {
       bucket: "receipts",
     };
 
-    // Create bucket
+   
     const s3Client = new S3Client({
       endpoint: s3Config.endpoint,
       region: s3Config.region,
@@ -59,10 +59,10 @@ describe("Receipt Storage System", () => {
     const today = new Date().toISOString().split("T")[0];
 
     it("should store the receipt PDF, metadata, and index entry", async () => {
-      // Arrange
+     
       const base64Pdf = Buffer.from("fake-pdf-content-for-test").toString("base64");
 
-      // Act
+     
       const result = await storage.storeReceipt(base64Pdf, {
         session_id: sessionId,
         consumer_id: consumerId,
@@ -72,34 +72,34 @@ describe("Receipt Storage System", () => {
         amount: "£25.50",
       });
 
-      // Assert
+     
       expect(result.pdf_key).toBe(`pdfs/${sessionId}.pdf`);
       expect(result.metadata_key).toBe(`metadata/${sessionId}.json`);
-      expect(result.index_key).toBe(`index/dt=${today}/index.ndjson`);
+      expect(result.index_key).toMatch(/^index\/dt=\d{4}-\d{2}-\d{2}\/hr=\d{2}\/shard=\d{2}\/part-[a-f0-9-]+\.ndjson\.gz$/);
     });
 
     it("should retrieve the receipt by session ID", async () => {
-      // Act
+     
       const results = await queryService.query({
         session_id: sessionId,
         date_from: today,
         date_to: today,
       });
 
-      // Assert
+     
       expect(results.records.length).toBe(1);
       expect(results.records[0].session_id).toBe(sessionId);
       expect(results.records[0].amount).toBe("£25.50");
     });
 
     it("should retrieve the receipt by consumer ID", async () => {
-      // Act
+     
       const results = await queryService.query({
         consumer_id: consumerId,
         date_from: today,
       });
 
-      // Assert
+     
       expect(results.records.length).toBeGreaterThanOrEqual(1);
       expect(results.records[0].consumer_id).toBe(consumerId);
     });
@@ -126,37 +126,37 @@ describe("Receipt Storage System", () => {
     });
 
     it("should find all receipts for a specific consumer", async () => {
-      // Act
+     
       const results = await queryService.query({
         consumer_id: "consumer-alice",
         date_from: today,
       });
 
-      // Assert
+     
       expect(results.records.length).toBe(2);
       expect(results.records.every(r => r.consumer_id === "consumer-alice")).toBe(true);
     });
 
     it("should find receipts by card last four digits", async () => {
-      // Act
+     
       const results = await queryService.query({
         card_last_four: "6666",
         date_from: today,
       });
 
-      // Assert
+     
       expect(results.records.length).toBe(1);
       expect(results.records[0].consumer_id).toBe("consumer-bob");
     });
 
     it("should return all receipts for a date range", async () => {
-      // Act
+     
       const results = await queryService.query({
         date_from: today,
         date_to: today,
       });
 
-      // Assert - should include all receipts from this test suite
+     
       expect(results.records.length).toBeGreaterThanOrEqual(4);
     });
   });
@@ -184,14 +184,14 @@ describe("Receipt Storage System", () => {
     });
 
     it("should find all receipts within the date range", async () => {
-      // Act
+     
       const results = await queryService.query({
         consumer_id: consumerId,
         date_from: "2025-12-20",
         date_to: "2025-12-22",
       });
 
-      // Assert
+     
       expect(results.records.length).toBe(3);
       expect(results.scanned_dates).toContain("2025-12-20");
       expect(results.scanned_dates).toContain("2025-12-21");
@@ -199,39 +199,39 @@ describe("Receipt Storage System", () => {
     });
 
     it("should find receipts for a single day only", async () => {
-      // Act
+     
       const results = await queryService.query({
         consumer_id: consumerId,
         date_from: "2025-12-21",
         date_to: "2025-12-21",
       });
 
-      // Assert
+     
       expect(results.records.length).toBe(1);
       expect(results.records[0].payment_date).toBe("2025-12-21");
     });
 
     it("should return empty when querying outside the date range", async () => {
-      // Act
+     
       const results = await queryService.query({
         consumer_id: consumerId,
         date_from: "2025-11-01",
         date_to: "2025-11-30",
       });
 
-      // Assert
+     
       expect(results.records.length).toBe(0);
       expect(results.scanned_dates.length).toBe(30);
     });
 
     it("should find receipts from start date to today when date_to is omitted", async () => {
-      // Act
+     
       const results = await queryService.query({
         consumer_id: consumerId,
         date_from: "2025-12-20",
       });
 
-      // Assert - should find all 3 receipts (20th, 21st, 22nd) plus scan up to today
+     
       expect(results.records.length).toBe(3);
       expect(results.scanned_dates).toContain("2025-12-20");
     });
@@ -241,7 +241,7 @@ describe("Receipt Storage System", () => {
     const consumerId = "consumer-edge-case";
 
     beforeAll(async () => {
-      // Create receipts at start and end of a month
+     
       const edgeDates = ["2025-11-30", "2025-12-01"];
       for (const date of edgeDates) {
         const base64Pdf = Buffer.from(`pdf-edge-${date}`).toString("base64");
@@ -257,44 +257,44 @@ describe("Receipt Storage System", () => {
     });
 
     it("should find receipts spanning month boundaries", async () => {
-      // Act
+     
       const results = await queryService.query({
         consumer_id: consumerId,
         date_from: "2025-11-30",
         date_to: "2025-12-01",
       });
 
-      // Assert
+     
       expect(results.records.length).toBe(2);
       expect(results.scanned_dates).toContain("2025-11-30");
       expect(results.scanned_dates).toContain("2025-12-01");
     });
 
     it("should handle same date for from and to", async () => {
-      // Act
+     
       const results = await queryService.query({
         consumer_id: consumerId,
         date_from: "2025-11-30",
         date_to: "2025-11-30",
       });
 
-      // Assert
+     
       expect(results.records.length).toBe(1);
       expect(results.scanned_dates.length).toBe(1);
       expect(results.scanned_dates[0]).toBe("2025-11-30");
     });
 
     it("should return results only for dates with data within a large range", async () => {
-      // Act - query entire month but only 2 days have data
+     
       const results = await queryService.query({
         consumer_id: consumerId,
         date_from: "2025-11-01",
         date_to: "2025-12-31",
       });
 
-      // Assert
+     
       expect(results.records.length).toBe(2);
-      expect(results.scanned_dates.length).toBe(61); // Nov + Dec days
+      expect(results.scanned_dates.length).toBe(61);
     });
   });
 
@@ -316,40 +316,40 @@ describe("Receipt Storage System", () => {
     });
 
     it("should retrieve the PDF as a buffer", async () => {
-      // Arrange
+     
       const results = await queryService.query({ session_id: sessionId, date_from: today });
       const pdfKey = results.records[0].pdf_key;
 
-      // Act
+     
       const pdfBuffer = await queryService.getPdf(pdfKey);
 
-      // Assert
+     
       expect(pdfBuffer.toString()).toBe(pdfContent);
     });
 
     it("should retrieve the PDF as base64", async () => {
-      // Arrange
+     
       const results = await queryService.query({ session_id: sessionId, date_from: today });
       const pdfKey = results.records[0].pdf_key;
 
-      // Act
+     
       const base64 = await queryService.getPdfBase64(pdfKey);
 
-      // Assert
+     
       expect(Buffer.from(base64, "base64").toString()).toBe(pdfContent);
     });
   });
 
   describe("Given a transaction fails midway", () => {
     it("should not leave partial data when metadata upload fails", async () => {
-      // This test would require mocking - for now we test the happy path
-      // In production, you'd use dependency injection to mock the S3 client
+     
+     
       
       const sessionId = "session-rollback-test";
       const today = new Date().toISOString().split("T")[0];
       const base64Pdf = Buffer.from("rollback-test-pdf").toString("base64");
 
-      // Store successfully first
+     
       await storage.storeReceipt(base64Pdf, {
         session_id: sessionId,
         consumer_id: "consumer-rollback",
@@ -359,7 +359,7 @@ describe("Receipt Storage System", () => {
         amount: "£100.00",
       });
 
-      // Verify it was stored
+     
       const results = await queryService.query({ session_id: sessionId, date_from: today });
       expect(results.records.length).toBe(1);
     });

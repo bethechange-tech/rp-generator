@@ -1,30 +1,22 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card, Spinner, WarningIcon } from "@/components/ui";
 import { useCostCalculator, type AppError } from "@/lib/ocpi";
 import type { CostBreakdownResponse } from "@/lib/ocpi/domain/schemas";
 import { styles } from "./styles";
 import { 
-  CalculatorIcon, CheckIcon, CheckCircleIcon, FormIcon, CodeIcon, 
-  TrashIcon, PlusIcon, BoltIcon, ParkingIcon, TariffIcon, InfoIcon,
-  ClockIcon, CalendarIcon, DayIcon 
+  CalculatorIcon, CheckIcon, CheckCircleIcon,
+  BoltIcon, ParkingIcon, TariffIcon, InfoIcon, ClockIcon, CalendarIcon 
 } from "./icons";
-import { 
-  DEFAULT_SESSION_FORM, DEFAULT_TARIFF_FORM, DEFAULT_RECORD_FORM,
-  EXAMPLE_SESSION, EXAMPLE_TARIFF, EXAMPLE_CDR, EXAMPLE_CDR_TARIFF, EXAMPLE_RECORD 
-} from "./defaults";
-import type { 
-  CalculationType, InputMode, Step, 
-  SessionFormData, TariffFormData, RecordFormData, 
-  ChargingDimension, PriceComponent, TariffRestriction 
-} from "./types";
+import { EXAMPLE_SESSION, EXAMPLE_TARIFF, EXAMPLE_CDR, EXAMPLE_CDR_TARIFF, EXAMPLE_RECORD } from "./defaults";
+import type { CalculationType, Step } from "./types";
 import { TYPE_INFO } from "./types";
 
 export function OcpiCalculatorForm() {
   const [step, setStep] = useState<Step>(1);
   const [calculationType, setCalculationType] = useState<CalculationType>("session");
-  const [inputMode, setInputMode] = useState<InputMode>("form");
+  const [inputMode, setInputMode] = useState<"form" | "json">("form");
   
   const [sessionJson, setSessionJson] = useState(EXAMPLE_SESSION);
   const [tariffJson, setTariffJson] = useState(EXAMPLE_TARIFF);
@@ -32,45 +24,8 @@ export function OcpiCalculatorForm() {
   const [cdrTariffJson, setCdrTariffJson] = useState(EXAMPLE_CDR_TARIFF);
   const [recordJson, setRecordJson] = useState(EXAMPLE_RECORD);
   
-  const [sessionForm, setSessionForm] = useState<SessionFormData>(DEFAULT_SESSION_FORM);
-  const [tariffForm, setTariffForm] = useState<TariffFormData>(DEFAULT_TARIFF_FORM);
-  const [recordForm, setRecordForm] = useState<RecordFormData>(DEFAULT_RECORD_FORM);
-  
   const { result, error, isLoading, calculate, reset } = useCostCalculator();
 
-  const syncFormToJson = useCallback(() => {
-    if (inputMode !== "form") return;
-    
-    setSessionJson(JSON.stringify({
-      ...sessionForm,
-      start_date_time: new Date(sessionForm.start_date_time).toISOString(),
-      end_date_time: new Date(sessionForm.end_date_time).toISOString(),
-      cdr_token: { uid: "012345678", type: "RFID", contract_id: "GB-VCH-C12345678-V" },
-      auth_method: "WHITELIST",
-      total_cost: { excl_vat: 0, incl_vat: 0 },
-      total_energy: sessionForm.kwh,
-      status: "COMPLETED",
-      last_updated: new Date().toISOString(),
-    }, null, 2));
-    
-    const tariffPayload = JSON.stringify({
-      ...tariffForm,
-      type: "REGULAR",
-      tariff_alt_text: [{ language: "en", text: "Standard charging tariff" }],
-      last_updated: new Date().toISOString(),
-    }, null, 2);
-    setTariffJson(tariffPayload);
-    setCdrTariffJson(tariffPayload);
-    
-    setRecordJson(JSON.stringify({
-      ...recordForm,
-      start_date_time: new Date(recordForm.start_date_time).toISOString(),
-      end_date_time: new Date(recordForm.end_date_time).toISOString(),
-      total_energy: recordForm.kwh,
-    }, null, 2));
-  }, [inputMode, sessionForm, tariffForm, recordForm]);
-
-  useEffect(() => { syncFormToJson(); }, [syncFormToJson]);
   useEffect(() => { if (result) setStep(3); }, [result]);
   useEffect(() => { if (error) setStep(2); }, [error]);
 
@@ -80,13 +35,43 @@ export function OcpiCalculatorForm() {
     reset();
   };
 
+  const syncFromPeriods = (json: string): string => {
+    try {
+      const data = JSON.parse(json);
+      if (!data.charging_periods?.length) return json;
+      
+      let totalEnergy = 0;
+      let totalParking = 0;
+      
+      for (const period of data.charging_periods) {
+        for (const dim of period.dimensions || []) {
+          if (dim.type === "ENERGY") totalEnergy += dim.volume || 0;
+          if (dim.type === "PARKING_TIME") totalParking += dim.volume || 0;
+        }
+      }
+      
+      return JSON.stringify({
+        ...data,
+        kwh: totalEnergy,
+        total_energy: totalEnergy,
+        total_parking_time: totalParking,
+      }, null, 2);
+    } catch {
+      return json;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       if (calculationType === "session") {
-        await calculate({ type: "session", session: JSON.parse(sessionJson), tariff: JSON.parse(tariffJson) });
+        const syncedSession = syncFromPeriods(sessionJson);
+        setSessionJson(syncedSession);
+        await calculate({ type: "session", session: JSON.parse(syncedSession), tariff: JSON.parse(tariffJson) });
       } else if (calculationType === "record") {
-        await calculate({ type: "record", record: JSON.parse(recordJson), tariff: JSON.parse(tariffJson) });
+        const syncedRecord = syncFromPeriods(recordJson);
+        setRecordJson(syncedRecord);
+        await calculate({ type: "record", record: JSON.parse(syncedRecord), tariff: JSON.parse(tariffJson) });
       } else {
         await calculate({ type: "cdr", cdr: JSON.parse(cdrJson), tariff: JSON.parse(cdrTariffJson) });
       }
@@ -98,20 +83,11 @@ export function OcpiCalculatorForm() {
   const handleReset = () => {
     reset();
     setStep(1);
-    setInputMode("form");
     setSessionJson(EXAMPLE_SESSION);
     setTariffJson(EXAMPLE_TARIFF);
     setCdrJson(EXAMPLE_CDR);
     setCdrTariffJson(EXAMPLE_CDR_TARIFF);
     setRecordJson(EXAMPLE_RECORD);
-    setSessionForm(DEFAULT_SESSION_FORM);
-    setTariffForm(DEFAULT_TARIFF_FORM);
-    setRecordForm(DEFAULT_RECORD_FORM);
-  };
-
-  const handleModeSwitch = (mode: InputMode) => {
-    if (mode === "json" && inputMode === "form") syncFormToJson();
-    setInputMode(mode);
   };
 
   return (
@@ -143,29 +119,21 @@ export function OcpiCalculatorForm() {
               </div>
               <button type="button" onClick={() => setStep(1)} className={styles.btnLink + " ml-4"}>Change type</button>
             </div>
-            {calculationType !== "cdr" && <InputModeToggle mode={inputMode} onModeChange={handleModeSwitch} />}
+            <InputModeToggle mode={inputMode} onModeChange={setInputMode} />
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && <ErrorDisplay error={error} />}
             
-            {inputMode === "form" && calculationType !== "cdr" ? (
-              <FormInputSection
-                calculationType={calculationType}
-                sessionForm={sessionForm} setSessionForm={setSessionForm}
-                tariffForm={tariffForm} setTariffForm={setTariffForm}
-                recordForm={recordForm} setRecordForm={setRecordForm}
-              />
-            ) : (
-              <DataInputSection
-                calculationType={calculationType}
-                sessionJson={sessionJson} setSessionJson={setSessionJson}
-                tariffJson={tariffJson} setTariffJson={setTariffJson}
-                cdrJson={cdrJson} setCdrJson={setCdrJson}
-                cdrTariffJson={cdrTariffJson} setCdrTariffJson={setCdrTariffJson}
-                recordJson={recordJson} setRecordJson={setRecordJson}
-              />
-            )}
+            <DataInputSection
+              calculationType={calculationType}
+              inputMode={inputMode}
+              sessionJson={sessionJson} setSessionJson={setSessionJson}
+              tariffJson={tariffJson} setTariffJson={setTariffJson}
+              cdrJson={cdrJson} setCdrJson={setCdrJson}
+              cdrTariffJson={cdrTariffJson} setCdrTariffJson={setCdrTariffJson}
+              recordJson={recordJson} setRecordJson={setRecordJson}
+            />
 
             <div className="flex gap-4">
               <button type="submit" disabled={isLoading} className={styles.btnPrimary}>
@@ -235,29 +203,9 @@ function TypeCard({ type, info, isSelected, onClick }: { type: CalculationType; 
   );
 }
 
-function InputModeToggle({ mode, onModeChange }: { mode: InputMode; onModeChange: (mode: InputMode) => void }) {
-  return (
-    <div className="inline-flex items-center bg-gray-100 rounded-lg p-1">
-      {(["form", "json"] as InputMode[]).map((m) => (
-        <button
-          key={m}
-          type="button"
-          onClick={() => onModeChange(m)}
-          className={`px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${
-            mode === m ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
-          }`}
-        >
-          {m === "form" ? <FormIcon /> : <CodeIcon />}
-          {m === "form" ? "Form" : "JSON"}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function ErrorDisplay({ error }: { error: AppError }) {
   return (
-    <div className="bg-red-50 border border-red-200 rounded-xl p-5 animate-shake">
+    <div className="bg-red-50 border border-red-200 rounded-xl p-5">
       <div className="flex gap-4">
         <div className="flex-shrink-0"><div className="bg-red-100 p-2.5 rounded-full"><WarningIcon className="w-5 h-5 text-red-600" /></div></div>
         <div className="flex-1 min-w-0">
@@ -282,8 +230,23 @@ function ErrorDisplay({ error }: { error: AppError }) {
   );
 }
 
-function DataInputSection({ calculationType, sessionJson, setSessionJson, tariffJson, setTariffJson, cdrJson, setCdrJson, cdrTariffJson, setCdrTariffJson, recordJson, setRecordJson }: {
+function InputModeToggle({ mode, onModeChange }: { mode: "form" | "json"; onModeChange: (m: "form" | "json") => void }) {
+  return (
+    <div className="flex bg-gray-100 rounded-lg p-1">
+      {(["form", "json"] as const).map((m) => (
+        <button key={m} type="button" onClick={() => onModeChange(m)}
+          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${mode === m ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+        >
+          {m === "form" ? "Form" : "JSON"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DataInputSection({ calculationType, inputMode, sessionJson, setSessionJson, tariffJson, setTariffJson, cdrJson, setCdrJson, cdrTariffJson, setCdrTariffJson, recordJson, setRecordJson }: {
   calculationType: CalculationType;
+  inputMode: "form" | "json";
   sessionJson: string; setSessionJson: (v: string) => void;
   tariffJson: string; setTariffJson: (v: string) => void;
   cdrJson: string; setCdrJson: (v: string) => void;
@@ -293,297 +256,318 @@ function DataInputSection({ calculationType, sessionJson, setSessionJson, tariff
   if (calculationType === "session") {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <JsonInputCard label="OCPI Session" description="Charging session data with periods and dimensions" value={sessionJson} onChange={setSessionJson} rows={18} />
-        <JsonInputCard label="OCPI Tariff" description="Pricing structure with elements and restrictions" value={tariffJson} onChange={setTariffJson} rows={18} />
+        <InputCard label="OCPI Session" description="Charging session data" value={sessionJson} onChange={setSessionJson} mode={inputMode} fields={SESSION_FIELDS} />
+        <InputCard label="OCPI Tariff" description="Pricing structure" value={tariffJson} onChange={setTariffJson} mode={inputMode} fields={TARIFF_FIELDS} />
       </div>
     );
   }
   if (calculationType === "record") {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <JsonInputCard label="Charge Record" description="Simplified record with charging periods" value={recordJson} onChange={setRecordJson} rows={14} />
-        <JsonInputCard label="OCPI Tariff" description="Pricing structure with elements and restrictions" value={tariffJson} onChange={setTariffJson} rows={14} />
+        <InputCard label="Charge Record" description="Simplified record" value={recordJson} onChange={setRecordJson} mode={inputMode} fields={RECORD_FIELDS} />
+        <InputCard label="OCPI Tariff" description="Pricing structure" value={tariffJson} onChange={setTariffJson} mode={inputMode} fields={TARIFF_FIELDS} />
       </div>
     );
   }
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <JsonInputCard label="OCPI CDR" description="Charge Detail Record with session details" value={cdrJson} onChange={setCdrJson} rows={22} />
-      <JsonInputCard label="OCPI Tariff" description="Separate tariff for cost calculation" value={cdrTariffJson} onChange={setCdrTariffJson} rows={22} />
+      <InputCard label="OCPI CDR" description="Charge Detail Record" value={cdrJson} onChange={setCdrJson} mode={inputMode} fields={[]} />
+      <InputCard label="OCPI Tariff" description="Pricing structure" value={cdrTariffJson} onChange={setCdrTariffJson} mode={inputMode} fields={TARIFF_FIELDS} />
     </div>
   );
 }
 
-function JsonInputCard({ label, description, value, onChange, rows }: { label: string; description: string; value: string; onChange: (v: string) => void; rows: number }) {
+type FieldDef = { key: string; label: string; type?: "number" | "text" | "datetime"; icon?: React.ReactNode; hint?: string; group?: string };
+
+const SESSION_FIELDS: FieldDef[] = [
+  { key: "kwh", label: "Energy Consumed", type: "number", icon: <BoltIcon className="w-4 h-4" />, hint: "kWh", group: "Energy" },
+  { key: "start_date_time", label: "Start Time", type: "datetime", icon: <ClockIcon className="w-4 h-4" />, group: "Time" },
+  { key: "end_date_time", label: "End Time", type: "datetime", icon: <ClockIcon className="w-4 h-4" />, group: "Time" },
+  { key: "total_parking_time", label: "Parking Duration", type: "number", icon: <ParkingIcon className="w-4 h-4" />, hint: "hours", group: "Parking" },
+];
+
+const RECORD_FIELDS: FieldDef[] = [
+  { key: "kwh", label: "Energy Consumed", type: "number", icon: <BoltIcon className="w-4 h-4" />, hint: "kWh", group: "Energy" },
+  { key: "duration_minutes", label: "Charging Duration", type: "number", icon: <ClockIcon className="w-4 h-4" />, hint: "minutes", group: "Time" },
+  { key: "parking_minutes", label: "Parking Duration", type: "number", icon: <ParkingIcon className="w-4 h-4" />, hint: "minutes", group: "Parking" },
+];
+
+const TARIFF_FIELDS: FieldDef[] = [
+  { key: "currency", label: "Currency", type: "text", hint: "e.g. EUR, GBP", group: "General" },
+];
+
+function InputCard({ label, description, value, onChange, mode, fields }: { 
+  label: string; description: string; value: string; onChange: (v: string) => void; mode: "form" | "json"; fields: FieldDef[];
+}) {
+  const parsed = (() => { try { return JSON.parse(value); } catch { return null; } })();
+
+  const updateField = (key: string, val: string, type?: string) => {
+    if (!parsed) return;
+    const newVal = type === "number" ? (val === "" ? 0 : Number(val)) : val;
+    const updated = { ...parsed, [key]: newVal };
+    onChange(JSON.stringify(updated, null, 2));
+  };
+
+  const groups = fields.reduce((acc, f) => {
+    const g = f.group || "Other";
+    if (!acc[g]) acc[g] = [];
+    acc[g].push(f);
+    return acc;
+  }, {} as Record<string, FieldDef[]>);
+
+  const periods = parsed?.charging_periods || [];
+  const showPeriods = label.includes("Session") || label.includes("Record");
+
+  const updatePeriods = (newPeriods: unknown[]) => {
+    if (!parsed) return;
+    onChange(JSON.stringify({ ...parsed, charging_periods: newPeriods }, null, 2));
+  };
+
+  const addPeriod = () => {
+    updatePeriods([...periods, { start_date_time: new Date().toISOString(), dimensions: [{ type: "ENERGY", volume: 0 }] }]);
+  };
+
+  const removePeriod = (idx: number) => {
+    updatePeriods(periods.filter((_: unknown, i: number) => i !== idx));
+  };
+
+  const updateDimension = (pIdx: number, dIdx: number, field: "type" | "volume", val: string) => {
+    const newPeriods = [...periods];
+    const dims = [...(newPeriods[pIdx].dimensions || [])];
+    dims[dIdx] = { ...dims[dIdx], [field]: field === "volume" ? Number(val) : val };
+    newPeriods[pIdx] = { ...newPeriods[pIdx], dimensions: dims };
+    updatePeriods(newPeriods);
+  };
+
+  const addDimension = (pIdx: number) => {
+    const newPeriods = [...periods];
+    newPeriods[pIdx] = { ...newPeriods[pIdx], dimensions: [...(newPeriods[pIdx].dimensions || []), { type: "ENERGY", volume: 0 }] };
+    updatePeriods(newPeriods);
+  };
+
+  const removeDimension = (pIdx: number, dIdx: number) => {
+    const newPeriods = [...periods];
+    newPeriods[pIdx] = { ...newPeriods[pIdx], dimensions: newPeriods[pIdx].dimensions.filter((_: unknown, i: number) => i !== dIdx) };
+    updatePeriods(newPeriods);
+  };
+
+  const elements = parsed?.elements || [];
+  const showElements = label.includes("Tariff");
+
+  const updateElements = (newElements: unknown[]) => {
+    if (!parsed) return;
+    onChange(JSON.stringify({ ...parsed, elements: newElements }, null, 2));
+  };
+
+  const addElement = () => {
+    updateElements([...elements, { price_components: [{ type: "ENERGY", price: 0, step_size: 1 }] }]);
+  };
+
+  const removeElement = (idx: number) => {
+    updateElements(elements.filter((_: unknown, i: number) => i !== idx));
+  };
+
+  const updatePriceComponent = (eIdx: number, pcIdx: number, field: string, val: string) => {
+    const newElements = [...elements];
+    const pcs = [...(newElements[eIdx].price_components || [])];
+    pcs[pcIdx] = { ...pcs[pcIdx], [field]: ["price", "step_size", "vat"].includes(field) ? Number(val) : val };
+    newElements[eIdx] = { ...newElements[eIdx], price_components: pcs };
+    updateElements(newElements);
+  };
+
+  const addPriceComponent = (eIdx: number) => {
+    const newElements = [...elements];
+    newElements[eIdx] = { ...newElements[eIdx], price_components: [...(newElements[eIdx].price_components || []), { type: "ENERGY", price: 0, step_size: 1 }] };
+    updateElements(newElements);
+  };
+
+  const removePriceComponent = (eIdx: number, pcIdx: number) => {
+    const newElements = [...elements];
+    newElements[eIdx] = { ...newElements[eIdx], price_components: newElements[eIdx].price_components.filter((_: unknown, i: number) => i !== pcIdx) };
+    updateElements(newElements);
+  };
+
   return (
     <Card className={styles.card}>
-      <div className="flex items-start justify-between mb-3">
+      <div className="flex items-start justify-between mb-4">
         <div>
           <label className="block text-sm font-semibold text-gray-800">{label}</label>
           <p className="text-xs text-gray-500 mt-0.5">{description}</p>
         </div>
-        <span className={`${styles.badge} bg-gray-100 text-gray-500 font-mono`}>JSON</span>
+        <span className={`${styles.badge} ${mode === "form" ? "bg-primary-100 text-primary-600" : "bg-gray-100 text-gray-500"} font-mono`}>
+          {mode === "form" ? "Form" : "JSON"}
+        </span>
       </div>
-      <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={rows} className={styles.textarea} spellCheck={false} />
-    </Card>
-  );
-}
-
-function FormInputSection({ calculationType, sessionForm, setSessionForm, tariffForm, setTariffForm, recordForm, setRecordForm }: {
-  calculationType: CalculationType;
-  sessionForm: SessionFormData; setSessionForm: (v: SessionFormData) => void;
-  tariffForm: TariffFormData; setTariffForm: (v: TariffFormData) => void;
-  recordForm: RecordFormData; setRecordForm: (v: RecordFormData) => void;
-}) {
-  if (calculationType === "session") {
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SessionFormCard form={sessionForm} onChange={setSessionForm} />
-        <TariffFormCard form={tariffForm} onChange={setTariffForm} />
-      </div>
-    );
-  }
-  if (calculationType === "record") {
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <RecordFormCard form={recordForm} onChange={setRecordForm} />
-        <TariffFormCard form={tariffForm} onChange={setTariffForm} />
-      </div>
-    );
-  }
-  return null;
-}
-
-function SessionFormCard({ form, onChange }: { form: SessionFormData; onChange: (v: SessionFormData) => void }) {
-  const updateKwh = (value: number) => {
-    const newPeriods = form.charging_periods.map(p => ({
-      ...p,
-      dimensions: p.dimensions.map(d => d.type === "ENERGY" ? { ...d, volume: value } : d),
-    }));
-    onChange({ ...form, kwh: value, charging_periods: newPeriods });
-  };
-
-  const updateDimension = (pIdx: number, dIdx: number, field: keyof ChargingDimension, value: string | number) => {
-    const newPeriods = [...form.charging_periods];
-    const dims = [...newPeriods[pIdx].dimensions];
-    dims[dIdx] = { ...dims[dIdx], [field]: value };
-    newPeriods[pIdx] = { ...newPeriods[pIdx], dimensions: dims };
-    const newKwh = dims[dIdx].type === "ENERGY" && field === "volume" ? (typeof value === "number" ? value : parseFloat(value) || 0) : form.kwh;
-    onChange({ ...form, charging_periods: newPeriods, kwh: newKwh });
-  };
-
-  const addDimension = (pIdx: number) => {
-    const newPeriods = [...form.charging_periods];
-    newPeriods[pIdx].dimensions.push({ type: "TIME", volume: 0 });
-    onChange({ ...form, charging_periods: newPeriods });
-  };
-
-  const removeDimension = (pIdx: number, dIdx: number) => {
-    const newPeriods = [...form.charging_periods];
-    newPeriods[pIdx].dimensions.splice(dIdx, 1);
-    onChange({ ...form, charging_periods: newPeriods });
-  };
-
-  return (
-    <Card className={styles.card}>
-      <div className="flex items-start justify-between mb-4">
-        <div><label className="block text-sm font-semibold text-gray-800">OCPI Session</label><p className="text-xs text-gray-500 mt-0.5">Charging session details</p></div>
-        <span className={`${styles.badge} bg-primary-50 text-primary-600`}>Form</span>
-      </div>
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Start Time"><input type="datetime-local" value={form.start_date_time} onChange={(e) => onChange({ ...form, start_date_time: e.target.value })} className={styles.input} /></FormField>
-          <FormField label="End Time"><input type="datetime-local" value={form.end_date_time} onChange={(e) => onChange({ ...form, end_date_time: e.target.value })} className={styles.input} /></FormField>
+      {mode === "json" ? (
+        <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={16} className={styles.textarea} spellCheck={false} />
+      ) : fields.length === 0 ? (
+        <div className="text-center py-8 text-gray-500">
+          <p className="text-sm">Form mode not available for this type.</p>
+          <p className="text-xs mt-1">Switch to JSON mode to edit.</p>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Energy (kWh)"><input type="number" step="0.1" value={form.kwh} onChange={(e) => updateKwh(parseFloat(e.target.value) || 0)} className={styles.input} /></FormField>
-          <FormField label="Currency">
-            <select value={form.currency} onChange={(e) => onChange({ ...form, currency: e.target.value })} className={styles.select}>
-              <option value="GBP">GBP (£)</option><option value="EUR">EUR (€)</option><option value="USD">USD ($)</option>
-            </select>
-          </FormField>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <FormField label="Country"><input type="text" value={form.country_code} onChange={(e) => onChange({ ...form, country_code: e.target.value.toUpperCase() })} maxLength={2} className={styles.input} /></FormField>
-          <FormField label="Party ID"><input type="text" value={form.party_id} onChange={(e) => onChange({ ...form, party_id: e.target.value.toUpperCase() })} maxLength={3} className={styles.input} /></FormField>
-          <FormField label="Location"><input type="text" value={form.location_id} onChange={(e) => onChange({ ...form, location_id: e.target.value })} className={styles.input} /></FormField>
-        </div>
-        <div className="border-t pt-4">
-          <label className="text-sm font-medium text-gray-700 mb-3 block">Charging Dimensions</label>
-          {form.charging_periods.map((period, pIdx) => (
-            <div key={pIdx} className="space-y-2">
-              {period.dimensions.map((dim, dIdx) => (
-                <div key={dIdx} className="flex items-center gap-2">
-                  <select value={dim.type} onChange={(e) => updateDimension(pIdx, dIdx, "type", e.target.value as ChargingDimension["type"])} className={styles.select + " flex-1"}>
-                    <option value="ENERGY">Energy (kWh)</option><option value="TIME">Time (hours)</option><option value="PARKING_TIME">Parking (hours)</option><option value="FLAT">Flat Fee</option>
-                  </select>
-                  <input type="number" step="0.01" value={dim.volume} onChange={(e) => updateDimension(pIdx, dIdx, "volume", parseFloat(e.target.value) || 0)} className={styles.input + " w-24"} />
-                  <button type="button" onClick={() => removeDimension(pIdx, dIdx)} className={styles.btnIcon} disabled={period.dimensions.length <= 1}><TrashIcon /></button>
-                </div>
-              ))}
-              <button type="button" onClick={() => addDimension(pIdx)} className={styles.btnLink + " flex items-center gap-1 mt-2"}><PlusIcon /> Add Dimension</button>
+      ) : (
+        <div className="space-y-5">
+          {Object.entries(groups).map(([groupName, groupFields]) => (
+            <div key={groupName}>
+              <div className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">{groupName}</div>
+              <div className="space-y-3">
+                {groupFields.map((f) => (
+                  <div key={f.key} className="relative">
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1.5">
+                      {f.icon && <span className="text-gray-400">{f.icon}</span>}
+                      {f.label}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={f.type === "number" ? "number" : "text"}
+                        value={parsed?.[f.key] ?? ""}
+                        onChange={(e) => updateField(f.key, e.target.value, f.type)}
+                        placeholder={f.hint}
+                        className={`${styles.input} ${f.hint ? "pr-16" : ""}`}
+                        step={f.type === "number" ? "any" : undefined}
+                      />
+                      {f.hint && (
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
+                          {f.hint}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
-        </div>
-      </div>
-    </Card>
-  );
-}
 
-function RecordFormCard({ form, onChange }: { form: RecordFormData; onChange: (v: RecordFormData) => void }) {
-  const updateDimension = (pIdx: number, dIdx: number, field: keyof ChargingDimension, value: string | number) => {
-    const newPeriods = [...form.charging_periods];
-    const dims = [...newPeriods[pIdx].dimensions];
-    dims[dIdx] = { ...dims[dIdx], [field]: value };
-    newPeriods[pIdx] = { ...newPeriods[pIdx], dimensions: dims };
-    const newKwh = dims[dIdx].type === "ENERGY" && field === "volume" ? (typeof value === "number" ? value : parseFloat(value) || 0) : form.kwh;
-    onChange({ ...form, charging_periods: newPeriods, kwh: newKwh });
-  };
-
-  return (
-    <Card className={styles.card}>
-      <div className="flex items-start justify-between mb-4">
-        <div><label className="block text-sm font-semibold text-gray-800">Charge Record</label><p className="text-xs text-gray-500 mt-0.5">Simple charging record</p></div>
-        <span className={`${styles.badge} bg-primary-50 text-primary-600`}>Form</span>
-      </div>
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Start Time"><input type="datetime-local" value={form.start_date_time} onChange={(e) => onChange({ ...form, start_date_time: e.target.value })} className={styles.input} /></FormField>
-          <FormField label="End Time"><input type="datetime-local" value={form.end_date_time} onChange={(e) => onChange({ ...form, end_date_time: e.target.value })} className={styles.input} /></FormField>
-        </div>
-        <FormField label="Total Energy (kWh)"><input type="number" step="0.1" value={form.kwh} onChange={(e) => onChange({ ...form, kwh: parseFloat(e.target.value) || 0 })} className={styles.input} /></FormField>
-        <div className="border-t pt-4">
-          <label className="text-sm font-medium text-gray-700 mb-3 block">Charging Dimensions</label>
-          {form.charging_periods.map((period, pIdx) => (
-            <div key={pIdx} className="space-y-2">
-              {period.dimensions.map((dim, dIdx) => (
-                <div key={dIdx} className="flex items-center gap-2">
-                  <select value={dim.type} onChange={(e) => updateDimension(pIdx, dIdx, "type", e.target.value as ChargingDimension["type"])} className={styles.select + " flex-1"}>
-                    <option value="ENERGY">Energy (kWh)</option><option value="TIME">Time (hours)</option><option value="PARKING_TIME">Parking (hours)</option><option value="FLAT">Flat Fee</option>
-                  </select>
-                  <input type="number" step="0.01" value={dim.volume} onChange={(e) => updateDimension(pIdx, dIdx, "volume", parseFloat(e.target.value) || 0)} className={styles.input + " w-24"} />
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function TariffFormCard({ form, onChange }: { form: TariffFormData; onChange: (v: TariffFormData) => void }) {
-  const updatePrice = (eIdx: number, pIdx: number, field: keyof PriceComponent, value: string | number) => {
-    const newElements = [...form.elements];
-    const comps = [...newElements[eIdx].price_components];
-    comps[pIdx] = { ...comps[pIdx], [field]: value };
-    newElements[eIdx] = { ...newElements[eIdx], price_components: comps };
-    onChange({ ...form, elements: newElements });
-  };
-
-  const addPrice = (eIdx: number) => {
-    const newElements = [...form.elements];
-    newElements[eIdx].price_components.push({ type: "ENERGY", price: 0, step_size: 1, vat: 20 });
-    onChange({ ...form, elements: newElements });
-  };
-
-  const removePrice = (eIdx: number, pIdx: number) => {
-    const newElements = [...form.elements];
-    newElements[eIdx].price_components.splice(pIdx, 1);
-    if (newElements[eIdx].price_components.length === 0) newElements.splice(eIdx, 1);
-    onChange({ ...form, elements: newElements });
-  };
-
-  const toggleRestriction = (eIdx: number) => {
-    const newElements = [...form.elements];
-    newElements[eIdx].restrictions = newElements[eIdx].restrictions 
-      ? undefined 
-      : { start_time: "09:00", end_time: "18:00", day_of_week: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"] };
-    onChange({ ...form, elements: newElements });
-  };
-
-  const updateRestriction = (eIdx: number, field: keyof TariffRestriction, value: string | string[]) => {
-    const newElements = [...form.elements];
-    if (newElements[eIdx].restrictions) {
-      newElements[eIdx].restrictions = { ...newElements[eIdx].restrictions, [field]: value };
-      onChange({ ...form, elements: newElements });
-    }
-  };
-
-  return (
-    <Card className={styles.card}>
-      <div className="flex items-start justify-between mb-4">
-        <div><label className="block text-sm font-semibold text-gray-800">OCPI Tariff</label><p className="text-xs text-gray-500 mt-0.5">Pricing structure</p></div>
-        <span className={`${styles.badge} bg-primary-50 text-primary-600`}>Form</span>
-      </div>
-      <div className="space-y-4">
-        <div className="grid grid-cols-3 gap-3">
-          <FormField label="Country"><input type="text" value={form.country_code} onChange={(e) => onChange({ ...form, country_code: e.target.value.toUpperCase() })} maxLength={2} className={styles.input} /></FormField>
-          <FormField label="Party ID"><input type="text" value={form.party_id} onChange={(e) => onChange({ ...form, party_id: e.target.value.toUpperCase() })} maxLength={3} className={styles.input} /></FormField>
-          <FormField label="Currency">
-            <select value={form.currency} onChange={(e) => onChange({ ...form, currency: e.target.value })} className={styles.select}>
-              <option value="GBP">GBP (£)</option><option value="EUR">EUR (€)</option><option value="USD">USD ($)</option>
-            </select>
-          </FormField>
-        </div>
-        <div className="border-t pt-4">
-          <label className="text-sm font-medium text-gray-700 mb-3 block">Price Components</label>
-          {form.elements.map((element, eIdx) => (
-            <div key={eIdx} className="mb-4 pb-4 border-b border-gray-100 last:border-0">
-              {element.price_components.map((comp, pIdx) => (
-                <div key={pIdx} className="flex items-center gap-2 mb-2">
-                  <select value={comp.type} onChange={(e) => updatePrice(eIdx, pIdx, "type", e.target.value as PriceComponent["type"])} className={styles.select + " flex-1"}>
-                    <option value="ENERGY">Energy (/kWh)</option><option value="TIME">Time (/hour)</option><option value="PARKING_TIME">Parking (/hour)</option><option value="FLAT">Flat Fee</option>
-                  </select>
-                  <input type="number" step="0.01" value={comp.price} onChange={(e) => updatePrice(eIdx, pIdx, "price", parseFloat(e.target.value) || 0)} className={styles.input + " w-20"} placeholder="Price" />
-                  <input type="number" value={comp.vat} onChange={(e) => updatePrice(eIdx, pIdx, "vat", parseInt(e.target.value) || 0)} className={styles.input + " w-16"} placeholder="VAT%" />
-                  <button type="button" onClick={() => removePrice(eIdx, pIdx)} className={styles.btnIcon}><TrashIcon /></button>
-                </div>
-              ))}
-              <div className="mt-2 flex items-center gap-2">
-                <button type="button" onClick={() => addPrice(eIdx)} className={styles.btnLink + " flex items-center gap-1"}><PlusIcon /> Add Price</button>
-                <span className="text-gray-300">|</span>
-                <button type="button" onClick={() => toggleRestriction(eIdx)} className="text-sm text-gray-500 hover:text-gray-700 font-medium">
-                  {element.restrictions ? "Remove Restrictions" : "Add Restrictions"}
+          {showPeriods && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Charging Periods</div>
+                <button type="button" onClick={addPeriod} className="text-xs text-primary-600 hover:text-primary-700 font-medium">
+                  + Add Period
                 </button>
               </div>
-              {element.restrictions && (
-                <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-                  <p className="text-xs font-medium text-gray-600 mb-2">Time Restrictions</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input type="time" value={element.restrictions.start_time || ""} onChange={(e) => updateRestriction(eIdx, "start_time", e.target.value)} className={styles.input} />
-                    <input type="time" value={element.restrictions.end_time || ""} onChange={(e) => updateRestriction(eIdx, "end_time", e.target.value)} className={styles.input} />
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].map((day, i) => {
-                      const fullDay = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"][i];
-                      const isActive = element.restrictions?.day_of_week?.includes(fullDay);
-                      return (
-                        <button key={day} type="button" onClick={() => {
-                          const current = element.restrictions?.day_of_week || [];
-                          updateRestriction(eIdx, "day_of_week", isActive ? current.filter(d => d !== fullDay) : [...current, fullDay]);
-                        }} className={`px-2 py-1 text-xs rounded font-medium transition-colors ${isActive ? "bg-primary-500 text-white" : "bg-gray-200 text-gray-600 hover:bg-gray-300"}`}>
-                          {day}
-                        </button>
-                      );
-                    })}
-                  </div>
+              {periods.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">No charging periods defined</p>
+              ) : (
+                <div className="space-y-3">
+                  {periods.map((period: { start_date_time?: string; dimensions?: { type: string; volume: number }[] }, pIdx: number) => (
+                    <div key={pIdx} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-gray-600">Period {pIdx + 1}</span>
+                        <button type="button" onClick={() => removePeriod(pIdx)} className="text-xs text-red-500 hover:text-red-600">Remove</button>
+                      </div>
+                      <div className="space-y-2">
+                        {(period.dimensions || []).map((dim: { type: string; volume: number }, dIdx: number) => (
+                          <div key={dIdx} className="flex items-center gap-2">
+                            <select
+                              value={dim.type}
+                              onChange={(e) => updateDimension(pIdx, dIdx, "type", e.target.value)}
+                              className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white"
+                            >
+                              <option value="ENERGY">ENERGY</option>
+                              <option value="PARKING_TIME">PARKING_TIME</option>
+                            </select>
+                            <input
+                              type="number"
+                              value={dim.volume}
+                              onChange={(e) => updateDimension(pIdx, dIdx, "volume", e.target.value)}
+                              className="text-xs border border-gray-200 rounded px-2 py-1.5 w-20"
+                              step="any"
+                            />
+                            <span className="text-xs text-gray-400">{dim.type === "ENERGY" ? "kWh" : "hrs"}</span>
+                            <button type="button" onClick={() => removeDimension(pIdx, dIdx)} className="text-xs text-gray-400 hover:text-red-500 ml-auto">×</button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => addDimension(pIdx)} className="text-xs text-gray-500 hover:text-primary-600">+ Add Dimension</button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-          ))}
-          <button type="button" onClick={() => onChange({ ...form, elements: [...form.elements, { price_components: [{ type: "ENERGY", price: 0, step_size: 1, vat: 20 }] }] })} 
-            className="w-full py-2 text-sm text-primary-500 hover:text-primary-600 font-medium border border-dashed border-primary-300 rounded-lg hover:border-primary-400 transition-colors flex items-center justify-center gap-1">
-            <PlusIcon /> Add Tariff Element
-          </button>
+          )}
+
+          {showElements && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Price Elements</div>
+                <button type="button" onClick={addElement} className="text-xs text-primary-600 hover:text-primary-700 font-medium">
+                  + Add Element
+                </button>
+              </div>
+              {elements.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">No price elements defined</p>
+              ) : (
+                <div className="space-y-3">
+                  {elements.map((el: { price_components?: { type: string; price: number; step_size: number; vat?: number }[] }, eIdx: number) => (
+                    <div key={eIdx} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-gray-600">Element {eIdx + 1}</span>
+                        <button type="button" onClick={() => removeElement(eIdx)} className="text-xs text-red-500 hover:text-red-600">Remove</button>
+                      </div>
+                      <div className="space-y-2">
+                        {(el.price_components || []).map((pc: { type: string; price: number; step_size: number; vat?: number }, pcIdx: number) => (
+                          <div key={pcIdx} className="flex flex-wrap items-center gap-2">
+                            <select
+                              value={pc.type}
+                              onChange={(e) => updatePriceComponent(eIdx, pcIdx, "type", e.target.value)}
+                              className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-white"
+                            >
+                              <option value="ENERGY">ENERGY</option>
+                              <option value="PARKING_TIME">PARKING_TIME</option>
+                            </select>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                value={pc.price}
+                                onChange={(e) => updatePriceComponent(eIdx, pcIdx, "price", e.target.value)}
+                                className="text-xs border border-gray-200 rounded px-2 py-1.5 w-20"
+                                step="any"
+                                placeholder="Price"
+                              />
+                              <span className="text-xs text-gray-400">/ unit</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-400">step:</span>
+                              <input
+                                type="number"
+                                value={pc.step_size}
+                                onChange={(e) => updatePriceComponent(eIdx, pcIdx, "step_size", e.target.value)}
+                                className="text-xs border border-gray-200 rounded px-2 py-1.5 w-16"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-400">VAT:</span>
+                              <input
+                                type="number"
+                                value={pc.vat ?? 0}
+                                onChange={(e) => updatePriceComponent(eIdx, pcIdx, "vat", e.target.value)}
+                                className="text-xs border border-gray-200 rounded px-2 py-1.5 w-14"
+                              />
+                              <span className="text-xs text-gray-400">%</span>
+                            </div>
+                            <button type="button" onClick={() => removePriceComponent(eIdx, pcIdx)} className="text-xs text-gray-400 hover:text-red-500 ml-auto">×</button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => addPriceComponent(eIdx)} className="text-xs text-gray-500 hover:text-primary-600">+ Add Price Component</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <details className="mt-4 pt-4 border-t border-gray-100">
+            <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600 flex items-center gap-1">
+              <span>Advanced: View Raw JSON</span>
+            </summary>
+            <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={8} className={`${styles.textarea} mt-3 text-xs`} spellCheck={false} />
+          </details>
         </div>
-      </div>
+      )}
     </Card>
   );
-}
-
-function FormField({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div><label className={styles.label}>{label}</label>{children}</div>;
 }
 
 function ResultsDisplay({ result, calculationType, onNewCalculation, onStartOver }: { 
@@ -626,8 +610,10 @@ function ResultsDisplay({ result, calculationType, onNewCalculation, onStartOver
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <DetailCard label="Duration" value={details.session.durationFormatted} subValue={`${details.session.durationMinutes} minutes`} icon={<ClockIcon className="w-4 h-4" />} />
               <DetailCard label="Day" value={details.session.dayOfWeek} subValue={details.session.date} icon={<CalendarIcon />} />
-              <DetailCard label="Time of Day" value={details.session.timeOfDay} icon={<DayIcon />} />
               <DetailCard label="Energy Used" value={`${details.energy.totalKwh} kWh`} subValue={details.energy.calculation} icon={<BoltIcon className="w-4 h-4" />} />
+              {details.parking.totalHours > 0 && (
+                <DetailCard label="Parking Time" value={`${details.parking.totalMinutes} mins`} subValue={details.parking.calculation} icon={<ParkingIcon className="w-4 h-4" />} />
+              )}
             </div>
           </Card>
 
@@ -642,7 +628,7 @@ function ResultsDisplay({ result, calculationType, onNewCalculation, onStartOver
                   </div>
                   <span className="text-sm font-medium text-gray-900 w-20 text-right">{result.formatted.energy_cost}</span>
                 </div>
-                {parkingPercent > 0 && (
+                {parkingValue > 0 && (
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-gray-600 w-20">Parking</span>
                     <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">

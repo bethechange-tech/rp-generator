@@ -1,8 +1,43 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useCallback } from "react";
-import { SearchIcon, Card } from "./ui";
+import { useState, useCallback, useEffect, KeyboardEvent } from "react";
+import { SearchIcon, Card, ClockIcon } from "./ui";
+
+const RECENT_SEARCHES_KEY = "receipt-recent-searches";
+const MAX_RECENT_SEARCHES = 5;
+
+interface RecentSearch {
+  label: string;
+  params: string;
+}
+
+function getRecentSearches(): RecentSearch[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentSearch(form: Record<string, string>) {
+  const filled = Object.entries(form).filter(([, v]) => v);
+  if (filled.length === 0) return;
+  
+  const params = new URLSearchParams();
+  filled.forEach(([k, v]) => params.set(k, v));
+  const paramsStr = params.toString();
+  
+  // Create readable label
+  const label = filled.map(([k, v]) => 
+    k === "card_last_four" ? `••••${v}` : v
+  ).join(" • ");
+  
+  const recent = getRecentSearches().filter(r => r.params !== paramsStr);
+  recent.unshift({ label, params: paramsStr });
+  localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(recent.slice(0, MAX_RECENT_SEARCHES)));
+}
 
 interface FormField {
   key: "consumer_id" | "card_last_four" | "receipt_number" | "date_from" | "date_to";
@@ -22,11 +57,59 @@ const FIELDS: FormField[] = [
 
 type FieldKey = FormField["key"];
 
+// Date preset helpers
+function formatDate(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
+
+function getDatePreset(preset: string): { from: string; to: string } {
+  const today = new Date();
+  const to = formatDate(today);
+  
+  switch (preset) {
+    case "today":
+      return { from: to, to };
+    case "7days": {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 7);
+      return { from: formatDate(from), to };
+    }
+    case "30days": {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 30);
+      return { from: formatDate(from), to };
+    }
+    case "thisMonth": {
+      const from = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { from: formatDate(from), to };
+    }
+    case "lastMonth": {
+      const from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const toDate = new Date(today.getFullYear(), today.getMonth(), 0);
+      return { from: formatDate(from), to: formatDate(toDate) };
+    }
+    default:
+      return { from: "", to: "" };
+  }
+}
+
+const DATE_PRESETS = [
+  { key: "today", label: "Today" },
+  { key: "7days", label: "7 days" },
+  { key: "30days", label: "30 days" },
+  { key: "thisMonth", label: "This month" },
+  { key: "lastMonth", label: "Last month" },
+];
+
 export function ReceiptSearch() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
 
-  // Single state object for all form fields
+  useEffect(() => {
+    setRecentSearches(getRecentSearches());
+  }, []);
+
   const [form, setForm] = useState<Record<FieldKey, string>>(() => ({
     consumer_id: searchParams.get("consumer_id") || "",
     card_last_four: searchParams.get("card_last_four") || "",
@@ -44,8 +127,14 @@ export function ReceiptSearch() {
     Object.entries(form).forEach(([key, value]) => {
       if (value) params.set(key, value);
     });
+    saveRecentSearch(form);
+    setRecentSearches(getRecentSearches());
     router.push(`/?${params.toString()}`);
   }, [form, router]);
+
+  const applyRecentSearch = useCallback((params: string) => {
+    router.push(`/?${params}`);
+  }, [router]);
 
   const handleClear = useCallback(() => {
     setForm({
@@ -57,6 +146,17 @@ export function ReceiptSearch() {
     });
     router.push("/");
   }, [router]);
+
+  const applyDatePreset = useCallback((preset: string) => {
+    const { from, to } = getDatePreset(preset);
+    setForm((prev) => ({ ...prev, date_from: from, date_to: to }));
+  }, []);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      handleSearch();
+    }
+  }, [handleSearch]);
 
   return (
     <Card className="p-4 sm:p-6">
@@ -78,6 +178,7 @@ export function ReceiptSearch() {
                 const value = field.maxLength ? e.target.value.slice(0, field.maxLength) : e.target.value;
                 updateField(field.key, value);
               }}
+              onKeyDown={handleKeyDown}
               placeholder={field.placeholder}
               maxLength={field.maxLength}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition text-base sm:text-sm"
@@ -85,6 +186,40 @@ export function ReceiptSearch() {
           </div>
         ))}
       </div>
+
+      {/* Date Presets */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        <span className="text-sm text-gray-500 mr-1">Quick dates:</span>
+        {DATE_PRESETS.map((preset) => (
+          <button
+            key={preset.key}
+            onClick={() => applyDatePreset(preset.key)}
+            className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition"
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Recent Searches */}
+      {recentSearches.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <span className="text-sm text-gray-500 flex items-center gap-1">
+            <ClockIcon className="w-4 h-4" />
+            Recent:
+          </span>
+          {recentSearches.map((search, i) => (
+            <button
+              key={i}
+              onClick={() => applyRecentSearch(search.params)}
+              className="px-3 py-1 text-sm bg-primary-50 text-primary-700 rounded-full hover:bg-primary-100 transition truncate max-w-[200px]"
+              title={search.label}
+            >
+              {search.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
         <button

@@ -29,7 +29,7 @@ describe("ParallelScanner", () => {
         return n;
       });
 
-      // First batch [1,2] then [3,4]
+     
       expect(callOrder).toEqual([1, 2, 3, 4]);
     });
 
@@ -39,7 +39,7 @@ describe("ParallelScanner", () => {
 
       await scanner.scan([1, 2, 3, 4, 5, 6], handler, 2);
 
-      // 6 items with batch size 2 = 3 batches
+     
       expect(handler).toHaveBeenCalledTimes(6);
     });
   });

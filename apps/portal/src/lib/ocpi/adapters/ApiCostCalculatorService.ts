@@ -50,7 +50,6 @@ export class ApiError extends Error {
   }
 }
 
-// Singleton instance for client-side use
 let instance: ApiCostCalculatorService | null = null;
 
 export function getCostCalculatorService(): ICostCalculatorService {

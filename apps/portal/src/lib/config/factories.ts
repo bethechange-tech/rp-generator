@@ -3,7 +3,7 @@ import { ReceiptQueryService, S3Config } from "@ev-receipt/core";
 export class S3ConfigFactory {
   static create(): S3Config {
     return {
-      endpoint: process.env.S3_ENDPOINT || "http://localhost:9000",
+      ...(process.env.S3_ENDPOINT && { endpoint: process.env.S3_ENDPOINT }),
       region: process.env.S3_REGION || "us-east-1",
       accessKeyId: process.env.S3_ACCESS_KEY || "minioadmin",
       secretAccessKey: process.env.S3_SECRET_KEY || "minioadmin",

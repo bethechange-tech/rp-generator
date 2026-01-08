@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction, RequestHandler } from "express";
 
-// Custom error class with status code
 export class AppError extends Error {
   constructor(
     public message: string,
@@ -18,7 +17,6 @@ export class NotFoundError extends AppError {
   }
 }
 
-// Wrap async handlers to catch errors automatically
 export const catchAsync = (
   fn: (req: Request, res: Response, next: NextFunction) => Promise<void>
 ): RequestHandler => {
@@ -27,7 +25,6 @@ export const catchAsync = (
   };
 };
 
-// Global error handler
 interface ErrorWithStatus extends Error {
   status?: number;
   statusCode?: number;

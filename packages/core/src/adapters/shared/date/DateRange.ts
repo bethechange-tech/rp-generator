@@ -1,14 +1,15 @@
 /** Utility class for date range operations */
 export class DateRange {
   private static readonly ONE_DAY_MS = 24 * 60 * 60 * 1000;
-  private static readonly DEFAULT_DAYS = 7;
+  private static readonly DEFAULT_DAYS = 365;
+  private static readonly MAX_DAYS = 365;
 
   readonly start: Date;
   readonly end: Date;
 
   constructor(from?: string, to?: string) {
     this.end = DateRange.parseEnd(to);
-    this.start = DateRange.parseStart(from, this.end);
+    this.start = DateRange.clampStart(DateRange.parseStart(from, this.end), this.end);
   }
 
   private static parseEnd(to?: string): Date {
@@ -20,10 +21,16 @@ export class DateRange {
     return new Date(end.getTime() - this.DEFAULT_DAYS * this.ONE_DAY_MS);
   }
 
+  private static clampStart(start: Date, end: Date): Date {
+    const maxStart = new Date(end.getTime() - this.MAX_DAYS * this.ONE_DAY_MS);
+    return start < maxStart ? maxStart : start;
+  }
+
   /** Get array of date strings (YYYY-MM-DD) */
   toArray(): string[] {
     const dates: string[] = [];
-    for (let d = new Date(this.start); d <= this.end; d.setDate(d.getDate() + 1)) {
+    const endDateStr = DateRange.format(this.end);
+    for (let d = new Date(this.start); DateRange.format(d) <= endDateStr; d.setDate(d.getDate() + 1)) {
       dates.push(DateRange.format(d));
     }
     return dates;

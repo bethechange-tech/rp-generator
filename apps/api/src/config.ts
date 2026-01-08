@@ -2,12 +2,18 @@ import type { IReceiptStorage, IReceiptQueryService } from "@ev-receipt/core";
 import { S3Config, ReceiptQueryService, S3ReceiptStorage } from "@ev-receipt/core";
 
 const s3Config: S3Config = {
-  endpoint: process.env.S3_ENDPOINT || "http://localhost:9000",
+  ...(process.env.S3_ENDPOINT && { endpoint: process.env.S3_ENDPOINT }),
   region: process.env.S3_REGION || "us-east-1",
   accessKeyId: process.env.S3_ACCESS_KEY || "minioadmin",
   secretAccessKey: process.env.S3_SECRET_KEY || "minioadmin",
   bucket: process.env.S3_BUCKET || "receipts",
 };
+
+console.log("Using S3 Configuration:", {
+  endpoint: s3Config.endpoint || "default",
+  region: s3Config.region,
+  bucket: s3Config.bucket,
+});
 
 export class StorageFactory {
   private static instance: IReceiptStorage | null = null;

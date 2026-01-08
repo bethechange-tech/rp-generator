@@ -38,9 +38,6 @@ const sampleData: ReceiptData = {
     subtotal: "£12.78",
     vat_rate: "20%",
     vat_amount: "£2.56",
-    // discount_label: "Member Discount",
-    // discount_percent: "10%",
-    // discount_amount: "£1.28",
     total_amount: "£14.06",
 
     card_brand: "Visa",
@@ -57,15 +54,15 @@ const s3Storage = S3ReceiptStorage.createLocal();
 const queryService = ReceiptQueryService.createLocal();
 
 async function main() {
-    // Generate PDF file locally
+   
     await generator.generate(sampleData, outputPath);
 
-    // Generate base64
+   
     const base64 = await generator.generateBase64(sampleData);
     fs.writeFileSync(base64Path, base64);
     console.log(`Base64 exported to: ${base64Path}`);
 
-    // Store in S3 with full indexing
+   
     const sessionId = `session-${Date.now()}`;
     const today = new Date().toISOString().split("T")[0];
     
@@ -81,10 +78,10 @@ async function main() {
         
         console.log("S3 storage complete:", result);
 
-        // Query receipts
+       
         console.log("\n--- Querying Receipts ---");
         
-        // Query by consumer
+       
         const byConsumer = await queryService.query({
             consumer_id: "consumer-12345",
             date_from: today,
@@ -92,14 +89,14 @@ async function main() {
         });
         console.log(`By consumer: ${byConsumer.records.length} found`);
 
-        // Query by card
+       
         const byCard = await queryService.query({
             card_last_four: "4582",
             date_from: today,
         });
         console.log(`By card ****4582: ${byCard.records.length} found`);
 
-        // Show all results
+       
         if (byConsumer.records.length > 0) {
             console.log("\nReceipts found:");
             byConsumer.records.forEach((r, i) => {

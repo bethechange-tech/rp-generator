@@ -8,13 +8,12 @@ import { Router } from "express";
 import { ReceiptPdfGenerator, S3ReceiptStorage, ReceiptQueryService } from "@ev-receipt/core";
 import type { ReceiptData, ReceiptQuery, S3Config } from "@ev-receipt/core";
 
-// Create test app factory
 function createTestApp(storage: S3ReceiptStorage, queryService: ReceiptQueryService) {
   const app = express();
   app.use(cors());
   app.use(express.json());
 
-  // Health check
+ 
   app.get("/health", (_req, res) => {
     res.json({
       status: "ok",
@@ -22,11 +21,11 @@ function createTestApp(storage: S3ReceiptStorage, queryService: ReceiptQueryServ
     });
   });
 
-  // Receipts routes
+ 
   const router = Router();
   const generator = ReceiptPdfGenerator.create();
 
-  // GET /receipts - Query receipts with pagination
+ 
   router.get("/", async (req, res) => {
     try {
       const query: ReceiptQuery = {
@@ -135,26 +134,25 @@ function createTestApp(storage: S3ReceiptStorage, queryService: ReceiptQueryServ
   return app;
 }
 
-// Sample receipt data for testing
 const sampleReceipt: ReceiptData = {
-  // Company
+ 
   company_name: "EV Charging Co",
   company_tagline: "Power Your Journey",
   company_website: "https://evcharging.co",
   support_email: "help@evcharging.co",
   support_phone: "+44 800 123 4567",
 
-  // Receipt
+ 
   receipt_number: "EVC-2025-00001",
   receipt_date: "2025-12-24",
 
-  // Station
+ 
   station_name: "Central Station Hub",
   station_address: "789 Charging Way, London EC1A 1AA",
   connector_type: "CCS",
   charger_power: "150 kW",
 
-  // Session
+ 
   session_start_time: "10:00 AM",
   session_end_time: "10:45 AM",
   session_duration: "45 min",
@@ -163,12 +161,12 @@ const sampleReceipt: ReceiptData = {
   battery_end: "80%",
   avg_charging_speed: "47 kW",
 
-  // Vehicle
+ 
   vehicle_make: "Tesla",
   vehicle_model: "Model 3",
   vehicle_vin: "5YJ3E1EA1KF123456",
 
-  // Costs
+ 
   energy_rate: "£0.35/kWh",
   energy_cost: "£12.43",
   session_fee: "£1.00",
@@ -180,7 +178,7 @@ const sampleReceipt: ReceiptData = {
   vat_amount: "£2.69",
   total_amount: "£16.12",
 
-  // Payment
+ 
   card_brand: "Visa",
   card_last_four: "4242",
   payment_status: "Paid",
@@ -194,7 +192,7 @@ describe("EV Receipt API", () => {
   let app: express.Express;
 
   beforeAll(async () => {
-    // Start MinIO container
+   
     container = await new GenericContainer("minio/minio:latest")
       .withExposedPorts(9000)
       .withEnvironment({
@@ -216,7 +214,7 @@ describe("EV Receipt API", () => {
       bucket: "receipts",
     };
 
-    // Create bucket
+   
     const s3Client = new S3Client({
       endpoint: s3Config.endpoint,
       region: s3Config.region,
@@ -292,7 +290,7 @@ describe("EV Receipt API", () => {
           .post("/receipts")
           .send({
             session_id: "incomplete-session",
-            // Missing consumer_id and receipt
+           
           });
 
         expect(response.status).toBe(400);
@@ -306,7 +304,7 @@ describe("EV Receipt API", () => {
     const existingSessionId = "existing-session-for-url";
 
     beforeAll(async () => {
-      // Create a receipt first
+     
       await request(app)
         .post("/receipts")
         .send({
@@ -332,8 +330,8 @@ describe("EV Receipt API", () => {
       it("Then it should still return a signed URL (S3 generates URL regardless of object existence)", async () => {
         const response = await request(app).get("/receipts/non-existent-session/url");
 
-        // Note: S3 generates signed URLs even for non-existent objects
-        // The URL will fail when accessed, not when generated
+       
+       
         expect(response.status).toBe(200);
         expect(response.body.data.url).toBeDefined();
       });
@@ -375,7 +373,9 @@ describe("EV Receipt API", () => {
     const querySessionIds = ["query-session-1", "query-session-2", "query-session-3"];
 
     beforeAll(async () => {
-      // Create receipts for query testing
+      // Clear cache before creating test data
+      queryService.clearCache();
+      
       for (const sessionId of querySessionIds) {
         await request(app)
           .post("/receipts")
@@ -389,11 +389,16 @@ describe("EV Receipt API", () => {
             },
           });
       }
+      
+      // Clear cache after creating to ensure fresh queries
+      queryService.clearCache();
     });
 
-    describe("When a client queries receipts via GET /receipts", () => {
+    describe("When a client queries receipts via GET /receipts with consumer_id", () => {
       it("Then it should return all receipts with pagination info", async () => {
-        const response = await request(app).get("/receipts");
+        const response = await request(app)
+          .get("/receipts")
+          .query({ consumer_id: queryConsumerId });
 
         expect(response.status).toBe(200);
         expect(response.body.success).toBe(true);
@@ -471,7 +476,7 @@ describe("EV Receipt API", () => {
 
     describe("When a client queries with pagination cursor", () => {
       it("Then it should return the next page of results", async () => {
-        // First request with limit
+       
         const firstPage = await request(app)
           .get("/receipts")
           .query({ limit: 2 });
@@ -487,7 +492,7 @@ describe("EV Receipt API", () => {
 
           expect(secondPage.status).toBe(200);
           expect(secondPage.body.success).toBe(true);
-          // Second page should have different records
+         
           const firstPageIds = firstPage.body.data.records.map((r: { session_id: string }) => r.session_id);
           const secondPageIds = secondPage.body.data.records.map((r: { session_id: string }) => r.session_id);
           const overlap = firstPageIds.filter((id: string) => secondPageIds.includes(id));

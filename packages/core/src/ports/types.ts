@@ -14,7 +14,7 @@ export interface ReceiptMetadata {
   payment_date: string;
   card_last_four: string;
   amount: string;
-  amount_pence?: number;  // Numeric amount in pence for SQL filtering (optional for backward compat)
+  amount_pence?: number; 
   pdf_key: string;
   metadata_key: string;
   created_at: string;
@@ -27,7 +27,7 @@ export interface ReceiptUploadResult {
 }
 
 export interface StorageConfig {
-  endpoint: string;
+  endpoint?: string;
   region: string;
   accessKeyId: string;
   secretAccessKey: string;

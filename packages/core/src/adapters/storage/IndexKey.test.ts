@@ -3,35 +3,29 @@ import { IndexKey } from "./IndexKey";
 
 describe("IndexKey", () => {
   describe("creating keys from dates", () => {
-    it("builds S3 path from date string", () => {
+    it("builds S3 prefix from date string", () => {
       const key = IndexKey.fromDate("2025-12-26");
 
-      expect(key.key).toBe("index/dt=2025-12-26/index.ndjson");
+      expect(key.prefix).toBe("index/dt=2025-12-26/");
       expect(key.date).toBe("2025-12-26");
     });
 
-    it("converts to string for S3 operations", () => {
+    it("converts to prefix string for S3 list operations", () => {
       const key = IndexKey.fromDate("2025-12-25");
 
-      expect(key.toString()).toBe("index/dt=2025-12-25/index.ndjson");
+      expect(key.toString()).toBe("index/dt=2025-12-25/");
     });
   });
 
   describe("parsing dates from keys", () => {
-    it("extracts date from valid S3 key", () => {
-      const date = IndexKey.parseDate("index/dt=2025-12-26/index.ndjson");
+    it("extracts date from sharded part file key with hour", () => {
+      const date = IndexKey.parseDate("index/dt=2025-12-26/hr=14/shard=34/part-abc123.ndjson.gz");
 
       expect(date).toBe("2025-12-26");
     });
 
     it("returns null for keys with wrong prefix", () => {
-      const date = IndexKey.parseDate("receipts/dt=2025-12-26/index.ndjson");
-
-      expect(date).toBeNull();
-    });
-
-    it("returns null for keys with wrong suffix", () => {
-      const date = IndexKey.parseDate("index/dt=2025-12-26/data.json");
+      const date = IndexKey.parseDate("receipts/dt=2025-12-26/hr=14/shard=34/part-abc.ndjson.gz");
 
       expect(date).toBeNull();
     });
@@ -42,13 +36,22 @@ describe("IndexKey", () => {
     });
   });
 
-  describe("round-trip conversion", () => {
-    it("can create a key and parse it back to the original date", () => {
-      const originalDate = "2025-12-24";
-      const key = IndexKey.fromDate(originalDate);
-      const parsedDate = IndexKey.parseDate(key.toString());
+  describe("isPartFile", () => {
+    it("recognizes valid part files with hour and shard", () => {
+      expect(IndexKey.isPartFile("index/dt=2025-12-26/hr=14/shard=34/part-abc123.ndjson.gz")).toBe(true);
+    });
 
-      expect(parsedDate).toBe(originalDate);
+    it("rejects non-part files", () => {
+      expect(IndexKey.isPartFile("index/dt=2025-12-26/hr=14/shard=34/data.json")).toBe(false);
+      expect(IndexKey.isPartFile("index/dt=2025-12-26/index.ndjson")).toBe(false);
+    });
+  });
+
+  describe("getShard", () => {
+    it("calculates shard from card_last_four", () => {
+      expect(IndexKey.getShard("1234")).toBe("34"); // 1234 % 100 = 34
+      expect(IndexKey.getShard("5000")).toBe("00"); // 5000 % 100 = 0
+      expect(IndexKey.getShard("9999")).toBe("99"); // 9999 % 100 = 99
     });
   });
 });

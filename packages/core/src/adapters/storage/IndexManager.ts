@@ -1,4 +1,6 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { gzipSync } from "zlib";
+import { randomUUID } from "crypto";
 import { ReceiptMetadata } from "../../ports";
 
 export interface IndexManagerConfig {
@@ -6,7 +8,7 @@ export interface IndexManagerConfig {
   bucket: string;
 }
 
-/** Manages NDJSON index files in S3 */
+/** Manages compressed NDJSON part files in S3 */
 export class IndexManager {
   private client: S3Client;
   private bucket: string;
@@ -16,53 +18,35 @@ export class IndexManager {
     this.bucket = config.bucket;
   }
 
-  /** Build index key from date */
-  buildKey(date: string): string {
-    return `index/dt=${date}/index.ndjson`;
+  /** Build part file key from date and card_last_four (with hour + shard) */
+  buildKey(date: string, cardLastFour: string): string {
+    const hour = String(new Date().getUTCHours()).padStart(2, "0");
+    const shard = String(parseInt(cardLastFour, 10) % 100).padStart(2, "0");
+    const uuid = randomUUID();
+    return `index/dt=${date}/hr=${hour}/shard=${shard}/part-${uuid}.ndjson.gz`;
   }
 
-  /** Get existing index content, returns null if not found */
-  async getContent(key: string): Promise<string | null> {
-    try {
-      const response = await this.client.send(
-        new GetObjectCommand({ Bucket: this.bucket, Key: key })
-      );
-      return (await response.Body?.transformToString()) || "";
-    } catch (err: any) {
-      if (err.name === "NoSuchKey") return null;
-      throw err;
-    }
-  }
-
-  /** Append metadata to index file */
-  async append(
-    metadata: ReceiptMetadata,
-    key: string,
-    existingContent: string | null
-  ): Promise<void> {
-    const newLine = JSON.stringify(metadata);
-    const updatedContent = existingContent ? `${existingContent}\n${newLine}` : newLine;
+  /** Write metadata as a new part file (no append, just create) */
+  async writePart(metadata: ReceiptMetadata, key: string): Promise<void> {
+    const content = JSON.stringify(metadata);
+    const compressed = gzipSync(Buffer.from(content, "utf-8"));
 
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
-        Body: updatedContent,
+        Body: compressed,
         ContentType: "application/x-ndjson",
+        ContentEncoding: "gzip",
       })
     );
     console.log(`  Index: ${key}`);
   }
 
-  /** Restore previous index content (for rollback) */
-  async restore(key: string, content: string): Promise<void> {
+  /** Delete a part file (for rollback) */
+  async deletePart(key: string): Promise<void> {
     await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: content,
-        ContentType: "application/x-ndjson",
-      })
+      new DeleteObjectCommand({ Bucket: this.bucket, Key: key })
     );
     console.log(`  Rolled back index: ${key}`);
   }

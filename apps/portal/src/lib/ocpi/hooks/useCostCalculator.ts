@@ -33,10 +33,8 @@ export function useCostCalculator(): UseCostCalculatorReturn {
     setState({ result: null, error: null, isLoading: true });
 
     try {
-      // Validate request
       const validatedRequest = CalculateCostRequestSchema.parse(request);
 
-      // Call service
       const service = getCostCalculatorService();
       const result = await service.calculate(validatedRequest as CalculateCostRequest);
 

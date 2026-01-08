@@ -131,8 +131,8 @@ describe("ReceiptPdfGenerator", () => {
 
   describe("factory method", () => {
     it("creates generator with default template directory", () => {
-      // This tests the static factory - can't easily test without file system
-      // but we verify it doesn't throw
+     
+     
       expect(() => ReceiptPdfGenerator.create()).not.toThrow();
     });
   });

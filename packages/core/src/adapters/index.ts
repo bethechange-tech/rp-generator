@@ -8,7 +8,6 @@ export { FileTemplateProvider, PuppeteerPdfRenderer } from "./rendering";
 
 export { LRUCache, ParallelScanner, DateRange, Cursor } from "./shared";
 
-// OCPI Cost Calculator
 export { OcpiCostCalculator } from "./shared/money/ocpi";
 export type { 
   ChargeRecord, 

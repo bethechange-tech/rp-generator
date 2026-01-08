@@ -16,7 +16,7 @@ export const DEFAULT_SESSION_FORM: SessionFormData = {
       start_date_time: new Date().toISOString(),
       dimensions: [
         { type: "ENERGY", volume: 45.5 },
-        { type: "TIME", volume: 1.5 },
+        { type: "PARKING_TIME", volume: 0.5 },
       ],
     },
   ],
@@ -51,7 +51,7 @@ export const DEFAULT_RECORD_FORM: RecordFormData = {
       start_date_time: new Date().toISOString(),
       dimensions: [
         { type: "ENERGY", volume: 45.5 },
-        { type: "TIME", volume: 1.5 },
+        { type: "PARKING_TIME", volume: 0.5 },
       ],
     },
   ],

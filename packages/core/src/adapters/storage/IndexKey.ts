@@ -1,14 +1,13 @@
-/** S3 index key builder for date-partitioned receipts */
+/** S3 index key builder for date-partitioned receipts with sharding */
 export class IndexKey {
   private static readonly PREFIX = "index/dt=";
-  private static readonly SUFFIX = "/index.ndjson";
 
   readonly date: string;
-  readonly key: string;
+  readonly prefix: string;
 
   private constructor(date: string) {
     this.date = date;
-    this.key = `${IndexKey.PREFIX}${date}${IndexKey.SUFFIX}`;
+    this.prefix = `${IndexKey.PREFIX}${date}/`;
   }
 
   /** Create index key from date string */
@@ -16,13 +15,26 @@ export class IndexKey {
     return new IndexKey(date);
   }
 
-  /** Parse index key back to date */
+  /** Parse date from a part file key */
   static parseDate(key: string): string | null {
-    if (!key.startsWith(this.PREFIX) || !key.endsWith(this.SUFFIX)) return null;
-    return key.slice(this.PREFIX.length, -this.SUFFIX.length);
+    if (!key.startsWith(this.PREFIX)) return null;
+    const afterPrefix = key.slice(this.PREFIX.length);
+    const slashIndex = afterPrefix.indexOf("/");
+    if (slashIndex === -1) return null;
+    return afterPrefix.slice(0, slashIndex);
+  }
+
+  /** Check if a key is a valid part file */
+  static isPartFile(key: string): boolean {
+    return key.includes("/part-") && key.endsWith(".ndjson.gz");
+  }
+
+  /** Calculate shard from card_last_four */
+  static getShard(cardLastFour: string): string {
+    return String(parseInt(cardLastFour, 10) % 100).padStart(2, "0");
   }
 
   toString(): string {
-    return this.key;
+    return this.prefix;
   }
 }

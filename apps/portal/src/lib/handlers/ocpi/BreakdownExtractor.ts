@@ -99,7 +99,7 @@ export class BreakdownExtractor {
     const totalKwh =
       (payload.total_energy as number) || (payload.kwh as number) || 0;
 
-    // Find energy price from tariff
+   
     let pricePerKwh = 0;
     if (tariff?.elements) {
       const elements = tariff.elements as TariffElement[];
@@ -130,10 +130,28 @@ export class BreakdownExtractor {
     payload: Record<string, unknown>,
     tariff?: Record<string, unknown>
   ): ParkingDetails {
-    const totalParkingTime = (payload.total_parking_time as number) || 0;
+   
+    let totalParkingTime = (payload.total_parking_time as number) || 0;
+    
+   
+    if (totalParkingTime === 0 && payload.charging_periods) {
+      const periods = payload.charging_periods as Array<{
+        dimensions?: Array<{ type: string; volume: number }>;
+      }>;
+      for (const period of periods) {
+        if (period.dimensions) {
+          for (const dim of period.dimensions) {
+            if (dim.type === "PARKING_TIME") {
+              totalParkingTime += dim.volume;
+            }
+          }
+        }
+      }
+    }
+    
     const totalMinutes = totalParkingTime * 60;
 
-    // Find parking price from tariff
+   
     let pricePerHour = 0;
     const applicableRestrictions: string[] = [];
 
@@ -146,7 +164,7 @@ export class BreakdownExtractor {
         if (parkingComponent) {
           pricePerHour = parkingComponent.price * 60;
 
-          // Check restrictions
+         
           if (element.restrictions) {
             const r = element.restrictions;
             if (r.start_time && r.end_time) {
@@ -227,7 +245,7 @@ export class BreakdownExtractor {
   ): string[] {
     const explanations: string[] = [];
 
-    // Session timing explanation
+   
     explanations.push(
       `Charging session on ${session.dayOfWeek}, ${session.date} (${session.timeOfDay.toLowerCase()} session)`
     );
@@ -235,14 +253,14 @@ export class BreakdownExtractor {
       `Duration: ${session.durationFormatted} (${session.startTime} to ${session.endTime})`
     );
 
-    // Energy explanation
+   
     if (energy.totalKwh > 0) {
       explanations.push(
         `Energy consumed: ${energy.totalKwh} kWh at £${energy.pricePerKwh.toFixed(2)} per kWh`
       );
     }
 
-    // Parking explanation
+   
     if (parking.totalMinutes > 0) {
       explanations.push(
         `Parking time: ${this.formatDuration(parking.totalMinutes)} at £${parking.pricePerHour.toFixed(2)} per hour`
@@ -256,7 +274,7 @@ export class BreakdownExtractor {
       explanations.push("No additional parking charges applied");
     }
 
-    // VAT explanation
+   
     const vatRate = tariff.elements.find((e) => e.vat)?.vat ?? 20;
     explanations.push(
       `VAT applied at ${vatRate}% (standard UK rate for EV charging)`

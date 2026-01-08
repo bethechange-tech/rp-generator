@@ -8,8 +8,10 @@ export interface S3ClientConfig extends StorageConfig {}
 export class S3ClientBuilder {
   private config: Partial<S3ClientConfig> = {};
 
-  endpoint(endpoint: string): this {
-    this.config.endpoint = endpoint;
+  endpoint(endpoint?: string): this {
+    if (endpoint) {
+      this.config.endpoint = endpoint;
+    }
     return this;
   }
 
@@ -28,18 +30,18 @@ export class S3ClientBuilder {
     this.validate();
 
     return new S3Client({
-      endpoint: this.config.endpoint,
+      ...(this.config.endpoint && { endpoint: this.config.endpoint }),
       region: this.config.region,
       credentials: {
         accessKeyId: this.config.accessKeyId!,
         secretAccessKey: this.config.secretAccessKey!,
       },
-      forcePathStyle: true,
+      forcePathStyle: !!this.config.endpoint, // Only force path style for custom endpoints
     });
   }
 
   private validate(): void {
-    const required: (keyof S3ClientConfig)[] = ["endpoint", "region", "accessKeyId", "secretAccessKey"];
+    const required: (keyof S3ClientConfig)[] = ["region", "accessKeyId", "secretAccessKey"];
     const missing = required.filter((key) => !this.config[key]);
 
     if (missing.length > 0) {

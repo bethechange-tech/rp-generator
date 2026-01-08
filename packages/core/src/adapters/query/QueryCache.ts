@@ -8,8 +8,8 @@ export interface QueryCacheConfig {
   ttlSeconds?: number;
 }
 
-/** Function type for fetching records from an index file */
-export type IndexFileFetcher = (key: string, query: ReceiptQuery) => Promise<ReceiptMetadata[]>;
+/** Function type for fetching records from a date prefix (lists all part files) */
+export type DatePrefixFetcher = (prefix: string, query: ReceiptQuery) => Promise<ReceiptMetadata[]>;
 
 /** Manages caching for receipt queries */
 export class QueryCache {
@@ -28,7 +28,7 @@ export class QueryCache {
   async queryDate(
     date: string,
     query: ReceiptQuery,
-    fetcher: IndexFileFetcher
+    fetcher: DatePrefixFetcher
   ): Promise<ReceiptMetadata[]> {
     const cached = this.get(date, query);
     if (cached) return cached;
@@ -36,7 +36,7 @@ export class QueryCache {
     const indexKey = IndexKey.fromDate(date);
 
     try {
-      const records = await fetcher(indexKey.key, query);
+      const records = await fetcher(indexKey.prefix, query);
       this.set(date, query, records);
       return records;
     } catch (err: any) {

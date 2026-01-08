@@ -20,7 +20,7 @@ export class CalculateCostHandler {
     try {
       const body = await request.json();
 
-      // Validate request body
+     
       const validatedRequest = CalculateCostRequestSchema.parse(body);
 
       let breakdown: CostBreakdown;
@@ -28,7 +28,7 @@ export class CalculateCostHandler {
       let tariffPayload: Record<string, unknown> | undefined;
 
       if (validatedRequest.type === "session") {
-        // Calculate from session and tariff
+       
         sessionPayload = validatedRequest.session as Record<string, unknown>;
         tariffPayload = validatedRequest.tariff as Record<string, unknown>;
         const chargeRecord = PayloadTransformer.toChargeRecord(sessionPayload);
@@ -37,7 +37,7 @@ export class CalculateCostHandler {
           validatedRequest.tariff as Tariff
         );
       } else if (validatedRequest.type === "record") {
-        // Calculate from simplified charge record and tariff
+       
         sessionPayload = validatedRequest.record as Record<string, unknown>;
         tariffPayload = validatedRequest.tariff as Record<string, unknown>;
         const chargeRecord = PayloadTransformer.toChargeRecord(sessionPayload);
@@ -46,11 +46,11 @@ export class CalculateCostHandler {
           validatedRequest.tariff as Tariff
         );
       } else {
-        // Calculate from CDR with optional separate tariff
+       
         sessionPayload = validatedRequest.cdr as Record<string, unknown>;
         const cdr = PayloadTransformer.toCdr(sessionPayload);
         
-        // Use separate tariff if provided, otherwise use embedded tariffs
+       
         if (validatedRequest.tariff) {
           tariffPayload = validatedRequest.tariff as Record<string, unknown>;
           breakdown = OcpiCostCalculator.calculate(cdr, validatedRequest.tariff as Tariff);
